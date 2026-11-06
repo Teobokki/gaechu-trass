@@ -1,0 +1,13 @@
+{
+  "version": "1.0.0",
+  "url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.0.0/GAECHU-TRASS-Setup-1.0.0.exe",
+  "installer_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.0.0/GAECHU-TRASS-Setup-1.0.0.exe",
+  "full_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.0.0/GAECHU-TRASS-1.0.0-Windows-x64.zip",
+  "portable_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.0.0/GAECHU-TRASS-1.0.0-Windows-x64.zip",
+  "release_url": "https://github.com/Teobokki/gaechu-trass/releases/tag/v1.0.0",
+  "sha256": "b8c4a4d75520d7f1231c7ed3c6b7a99d7606ff16428cc5c876ad15db6935fad9",
+  "installer_sha256": "b8c4a4d75520d7f1231c7ed3c6b7a99d7606ff16428cc5c876ad15db6935fad9",
+  "full_sha256": "3f4a359bedc3702c3187e91ab1494b775e0313a2b121b2148e3da2c090f7ba83",
+  "portable_sha256": "3f4a359bedc3702c3187e91ab1494b775e0313a2b121b2148e3da2c090f7ba83",
+  "notes": "개추 트래스 1.0.0 — Korean-first cinematic episode board. Add any number of pictures from Downloads and compose a widescreen episode."
+}
