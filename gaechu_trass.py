@@ -9,7 +9,7 @@ from tkinter import ttk, filedialog, messagebox
 import tkinter.font as tkfont
 
 APP = "개추 트래스"
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 COPYRIGHT = "\u00a92026 EX Inc./HYPERION DIGITAL \u00a92026"
 REPO = "Teobokki/gaechu-trass"
 UPDATE_URL = "https://raw.githubusercontent.com/%s/main/latest.json" % REPO
@@ -504,7 +504,7 @@ class Studio(tk.Tk):
         self.strip_photos = []
         self._drag = None
         self.ep_title = tk.StringVar(value="에피소드 1")
-        self.tab = "home"  # home | maker — default episode home
+        self.tab = "maker"  # home | maker — default maker board
         self.library = load_library()
         self._home_photos = []
         self._nav = {}
@@ -556,10 +556,10 @@ class Studio(tk.Tk):
         for key, label in (("home", "에피소드"), ("maker", "⌂  개추 트래스")):
             f = tk.Frame(nav, bg=PANEL)
             f.pack(side="left", padx=2, fill="y")
-            l = tk.Label(f, text=label, bg=PANEL, fg=TXT, font=(FONT_UI, 10, "bold"),
+            l = tk.Label(f, text=label, bg=PANEL, fg=(TXT if key == "maker" else MUT), font=(FONT_UI, 10, "bold"),
                          padx=14, pady=8, cursor="hand2")
             l.pack(side="top", fill="y", expand=True)
-            bar = tk.Frame(f, bg=RED if key == "home" else PANEL, height=3)
+            bar = tk.Frame(f, bg=RED if key == "maker" else PANEL, height=3)
             bar.pack(side="bottom", fill="x")
             l.bind("<Button-1>", lambda e, k=key: self.show_tab(k))
             f.bind("<Button-1>", lambda e, k=key: self.show_tab(k))
@@ -570,7 +570,7 @@ class Studio(tk.Tk):
         self.body = tk.Frame(self, bg=BG)
         self.body.pack(fill="both", expand=True)
 
-        # ---- Episode home (default) ----
+        # ---- Episode home ----
         self.page_home = tk.Frame(self.body, bg=BG)
         self._build_home(self.page_home)
 
@@ -581,9 +581,10 @@ class Studio(tk.Tk):
         self.page_player = tk.Frame(self.body, bg="#000000")
         self._build_player(self.page_player)
 
-        self.page_home.pack(fill="both", expand=True)
+        self.page_home.pack_forget()
         self.page_maker.pack_forget()
         self.page_player.pack_forget()
+        self.show_tab("maker")
 
     def _build_home(self, root):
         head = tk.Frame(root, bg=BG)
