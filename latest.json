@@ -1,13 +1,12 @@
 {
-  "version": "1.0.1",
-  "url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.0.1/GAECHU-TRASS-Setup-1.0.1.exe",
-  "installer_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.0.1/GAECHU-TRASS-Setup-1.0.1.exe",
-  "full_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.0.1/GAECHU-TRASS-1.0.1-Windows-x64.zip",
-  "portable_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.0.1/GAECHU-TRASS-1.0.1-Windows-x64.zip",
-  "release_url": "https://github.com/Teobokki/gaechu-trass/releases/tag/v1.0.1",
-  "sha256": "8f337114677687330dc86e6e432fc33b693ef9c19970c13f806137addbee103e",
-  "installer_sha256": "8f337114677687330dc86e6e432fc33b693ef9c19970c13f806137addbee103e",
-  "portable_sha256": "52622f0ad624c942802433801e138c2e28dcb5362cb36a1c8e2ee1e10de493e6",
-  "published_at": "2026-11-06T19:41:06Z",
-  "notes": "개추 트래스 1.0.1 — Episode home with featured teaser 개추 트래스 (에피소드 1), in-app cinematic player, and ⌂ 개추 트래스 maker board. Exports join your episode library."
+  "version": "1.0.2",
+  "url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.0.2/GAECHU-TRASS-Setup-1.0.2.exe",
+  "installer_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.0.2/GAECHU-TRASS-Setup-1.0.2.exe",
+  "full_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.0.2/GAECHU-TRASS-1.0.2-Windows-x64.zip",
+  "portable_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.0.2/GAECHU-TRASS-1.0.2-Windows-x64.zip",
+  "release_url": "https://github.com/Teobokki/gaechu-trass/releases/tag/v1.0.2",
+  "sha256": "c88f85ccd57cbaad0a9d27beda52506d979a4ff0e1f92aa80b5cf38557df4bec",
+  "size": 79956087,
+  "published": "2026-11-06",
+  "notes": "개추 트래스 1.0.2 — Opens on the ⌂ 개추 트래스 maker board by default. 에피소드 home and in-app player remain for watching the featured episode and your exports."
 }
