@@ -9,7 +9,7 @@ from tkinter import ttk, filedialog, messagebox
 import tkinter.font as tkfont
 
 APP = "개추 트래스"
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.3"
 COPYRIGHT = "\u00a92026 EX Inc./HYPERION DIGITAL \u00a92026"
 REPO = "Teobokki/gaechu-trass"
 UPDATE_URL = "https://raw.githubusercontent.com/%s/main/latest.json" % REPO
@@ -352,6 +352,235 @@ def make_end_card(title, tw=OUT_W, th=OUT_H):
     return im
 
 
+# ------------------------- TTS SUBTITLES (optional) -------------------------
+# Typed per-scene text is burned in as a caption and narrated. Empty = nothing.
+NO_WINDOW = 0x08000000 if os.name == "nt" else 0
+TTS_RATE = 48000
+TTS_LEAD = 0.30   # silence before a line starts inside its scene
+TTS_TAIL = 0.45   # breathing room after the line, before the crossfade
+TTS_VOICES = {
+    "ko": ("ko-KR-SunHiNeural", "ko-KR"),
+    "ja": ("ja-JP-NanamiNeural", "ja-JP"),
+    "en": ("en-US-AriaNeural", "en-US"),
+}
+_HANGUL = re.compile(r"[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]")
+_KANA = re.compile(r"[\u3040-\u30ff\u31f0-\u31ff\uff66-\uff9f]")
+_HAN = re.compile(r"[\u4e00-\u9fff\u3400-\u4dbf]")
+_tts_dur_cache = {}
+
+
+def clean_caption(text):
+    return re.sub(r"\s+", " ", str(text or "")).strip()
+
+
+def detect_lang(text):
+    """Hangul -> ko, kana (or kanji-only) -> ja, else en."""
+    if _HANGUL.search(text):
+        return "ko"
+    if _KANA.search(text) or _HAN.search(text):
+        return "ja"
+    return "en"
+
+
+def run_hidden(cmd, timeout=120, **kw):
+    return subprocess.run(cmd, capture_output=True, timeout=timeout, creationflags=NO_WINDOW, **kw)
+
+
+def tts_cache_dir():
+    d = os.path.join(app_data_dir(), "tts")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def _to_wav(src, dst):
+    p = run_hidden([ffmpeg_exe(), "-y", "-loglevel", "error", "-i", src,
+                    "-ac", "1", "-ar", str(TTS_RATE), "-c:a", "pcm_s16le", dst])
+    if p.returncode != 0 or not os.path.isfile(dst) or os.path.getsize(dst) < 200:
+        raise RuntimeError((p.stderr or b"").decode("utf-8", "replace")[-200:] or "wav convert failed")
+    return dst
+
+
+def _tts_edge(text, voice, mp3):
+    import asyncio
+    import edge_tts
+
+    async def go():
+        await edge_tts.Communicate(text, voice).save(mp3)
+    asyncio.run(go())
+    if not os.path.isfile(mp3) or os.path.getsize(mp3) < 200:
+        raise RuntimeError("edge-tts returned no audio")
+
+
+def _tts_sapi(text, culture, wav):
+    """Offline Windows voices (e.g. Microsoft Heami on Korean Windows) via System.Speech."""
+    if os.name != "nt":
+        raise RuntimeError("Windows voice not available")
+    txt = wav + ".txt"
+    with open(txt, "w", encoding="utf-8-sig") as f:
+        f.write(text)
+    ps = (
+        "Add-Type -AssemblyName System.Speech;"
+        "$s=New-Object System.Speech.Synthesis.SpeechSynthesizer;"
+        "$c='%s';"
+        "$v=$s.GetInstalledVoices()|?{$_.Enabled -and $_.VoiceInfo.Culture.Name -eq $c}|select -First 1;"
+        "if(-not $v){$v=$s.GetInstalledVoices()|?{$_.Enabled -and $_.VoiceInfo.Culture.Name.StartsWith($c.Substring(0,2))}|select -First 1};"
+        "if($v){$s.SelectVoice($v.VoiceInfo.Name)};"
+        "$t=[IO.File]::ReadAllText('%s',[Text.Encoding]::UTF8);"
+        "$s.SetOutputToWaveFile('%s');$s.Speak($t);$s.Dispose()"
+    ) % (culture, txt.replace("'", "''"), wav.replace("'", "''"))
+    try:
+        p = run_hidden(["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+                        "-Command", ps], timeout=180)
+    finally:
+        try:
+            os.remove(txt)
+        except Exception:
+            pass
+    if p.returncode != 0 or not os.path.isfile(wav) or os.path.getsize(wav) < 200:
+        raise RuntimeError((p.stderr or b"").decode("utf-8", "replace")[-200:] or "Windows voice failed")
+
+
+def wav_seconds(path):
+    import wave
+    with wave.open(path, "rb") as w:
+        return w.getnframes() / float(w.getframerate() or 1)
+
+
+def tts_wav(text):
+    """Return (wav_path, seconds, engine) for text; cached per text+voice. Raises if all engines fail."""
+    import hashlib
+    text = clean_caption(text)
+    if not text:
+        return None, 0.0, ""
+    lang = detect_lang(text)
+    voice, culture = TTS_VOICES[lang]
+    key = hashlib.sha1(("v1|%s|%s" % (voice, text)).encode("utf-8")).hexdigest()[:20]
+    out = os.path.join(tts_cache_dir(), key + ".wav")
+    if os.path.isfile(out) and os.path.getsize(out) > 200:
+        sec = wav_seconds(out)
+        _tts_dur_cache[text] = sec
+        return out, sec, "cache"
+    errs = []
+    tmp_mp3 = out + ".mp3"
+    try:
+        _tts_edge(text, voice, tmp_mp3)
+        _to_wav(tmp_mp3, out)
+        engine = "edge:" + voice
+    except Exception as e:
+        errs.append("online voice: %s" % e)
+        engine = ""
+    finally:
+        try:
+            os.remove(tmp_mp3)
+        except Exception:
+            pass
+    if not engine:
+        raw = out + ".sapi.wav"
+        try:
+            _tts_sapi(text, culture, raw)
+            _to_wav(raw, out)
+            engine = "windows:" + culture
+        except Exception as e:
+            errs.append("Windows voice: %s" % e)
+        finally:
+            try:
+                os.remove(raw)
+            except Exception:
+                pass
+    if not engine:
+        raise RuntimeError("; ".join(errs))
+    sec = wav_seconds(out)
+    _tts_dur_cache[text] = sec
+    return out, sec, engine
+
+
+def scene_seconds_for(speech_secs):
+    """Keep the normal scene length unless the spoken line needs more; never cut speech."""
+    if speech_secs <= 0:
+        return SCENE_SECS
+    return max(SCENE_SECS, TTS_LEAD + speech_secs + TTS_TAIL + XFADE_SECS)
+
+
+def build_narration(segments, total, out_wav):
+    """segments: [(start_sec, wav_path)] -> one mono PCM track of exactly `total` seconds."""
+    import wave
+    n = int(round(total * TTS_RATE))
+    buf = bytearray(n * 2)
+    for start, path in segments:
+        with wave.open(path, "rb") as w:
+            data = w.readframes(w.getnframes())
+        off = int(round(start * TTS_RATE)) * 2
+        end = min(len(buf), off + len(data))
+        if end > off:
+            buf[off:end] = data[:end - off]
+    with wave.open(out_wav, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(TTS_RATE)
+        w.writeframes(bytes(buf))
+    return out_wav
+
+
+def _wrap_caption(d, text, font, maxw):
+    lines, cur = [], ""
+    tokens = re.findall(r"\S+\s*", text) if " " in text else list(text)
+    for tok in tokens:
+        trial = cur + tok
+        if d.textlength(trial.rstrip(), font=font) <= maxw or not cur:
+            if d.textlength(trial.rstrip(), font=font) > maxw and not cur and len(tok) > 1:
+                # very long token (no spaces, e.g. Japanese): break per character
+                for ch in tok:
+                    if d.textlength((cur + ch).rstrip(), font=font) > maxw and cur:
+                        lines.append(cur.rstrip())
+                        cur = ch
+                    else:
+                        cur += ch
+                continue
+            cur = trial
+        else:
+            lines.append(cur.rstrip())
+            cur = tok.lstrip()
+    if cur.strip():
+        lines.append(cur.rstrip())
+    return lines
+
+
+def draw_caption(frame, text):
+    """Burn a clean caption into the lower part of a 16:9 frame (KO/JA/EN via Noto Sans KR)."""
+    text = clean_caption(text)
+    if not text:
+        return frame
+    fr = frame.convert("RGB").copy()
+    W, H = fr.size
+    size = max(14, int(H * 0.050))
+    # Bold KR face covers Hangul/Latin/kana; full CJK face for kanji/hanja so nothing renders as boxes.
+    cjk = bool(_HAN.search(text))
+    font = pil_font(size, bold=not cjk, mixed=cjk)
+    d = ImageDraw.Draw(fr)
+    lines = _wrap_caption(d, text, font, W * 0.80)
+    if len(lines) > 3:
+        lines = lines[:3]
+        lines[-1] = lines[-1][:max(1, len(lines[-1]) - 1)] + "…"
+    lh = int(size * 1.38)
+    block_h = lh * len(lines)
+    y0 = int(H * 0.915) - block_h
+    # soft dark band for legibility on bright pictures
+    band = Image.new("L", (W, H), 0)
+    bd = ImageDraw.Draw(band)
+    g_top = y0 - int(size * 2.2)
+    g_len = max(1, int(size * 2.0))
+    for i in range(g_len):
+        bd.line([(0, g_top + i), (W, g_top + i)], fill=int(120 * (i + 1) / g_len))
+    bd.rectangle([0, g_top + g_len, W, H], fill=120)
+    fr = Image.composite(Image.new("RGB", (W, H), (0, 0, 0)), fr, band)
+    d = ImageDraw.Draw(fr)
+    stroke = max(1, size // 14) + (1 if cjk else 0)
+    for i, ln in enumerate(lines):
+        d.text((W / 2, y0 + i * lh + lh / 2), ln, font=font, fill=(250, 250, 250), anchor="mm",
+               stroke_width=stroke, stroke_fill=(0, 0, 0))
+    return fr
+
+
 def scene_pan_for_index(i):
     """Vary pan direction per scene so motion feels intentional."""
     patterns = [
@@ -377,76 +606,131 @@ def blend(a, b, t):
 
 
 class EpisodeComposer:
-    """Builds the timeline of RGB frames for preview/export."""
+    """Builds the timeline of RGB frames for preview/export.
+    captions: optional per-scene text (burned in); durations: optional per-scene seconds."""
 
-    def __init__(self, scenes, title):
+    def __init__(self, scenes, title, captions=None, durations=None):
         self.scenes = scenes  # list of PIL RGB images
         self.title = title or "에피소드"
+        n = len(scenes)
+        caps = list(captions or [])
+        self.captions = [clean_caption(caps[i]) if i < len(caps) else "" for i in range(n)]
+        durs = list(durations or [])
+        self.durations = [max(SCENE_SECS, float(durs[i])) if i < len(durs) and durs[i] else SCENE_SECS
+                          for i in range(n)]
+        self.starts = []
+        t = TITLE_SECS
+        for d in self.durations:
+            self.starts.append(t)
+            t += d
 
-    def timeline(self):
-        """Yield (global_t_end, kind, payload) segments — used by renderer."""
-        segs = []
-        t = 0.0
-        segs.append((TITLE_SECS, "title", None))
-        t += TITLE_SECS
-        for i, im in enumerate(self.scenes):
-            segs.append((SCENE_SECS, "scene", (i, im)))
-            t += SCENE_SECS
-        segs.append((END_SECS, "end", None))
-        return segs
+    def scene_start(self, i):
+        return self.starts[i]
 
     def total_seconds(self):
-        n = len(self.scenes)
-        return TITLE_SECS + n * SCENE_SECS + END_SECS
+        return TITLE_SECS + sum(self.durations) + END_SECS
+
+    def _scene_frame(self, idx, local, span):
+        progress = max(0.0, min(1.0, local / span))
+        pan0, pan1 = scene_pan_for_index(idx)
+        pan = (lerp(pan0[0], pan1[0], progress), lerp(pan0[1], pan1[1], progress))
+        zoom = lerp(1.0, ZOOM_END, progress)
+        fr = fit_cover(self.scenes[idx], OUT_W, OUT_H, zoom=zoom, pan=pan)
+        if self.captions[idx]:
+            fr = draw_caption(fr, self.captions[idx])
+        return fr
 
     def frame_at(self, t):
         """Return a finished 16:9 RGB frame at time t (seconds)."""
         if t < TITLE_SECS:
             return make_title_card(self.title)
-        t2 = t - TITLE_SECS
         n = len(self.scenes)
         if n == 0:
             return make_end_card(self.title)
-        scene_span = SCENE_SECS
-        total_scenes = n * scene_span
-        if t2 < total_scenes:
-            idx = min(n - 1, int(t2 / scene_span))
-            local = t2 - idx * scene_span
-            progress = max(0.0, min(1.0, local / scene_span))
-            pan0, pan1 = scene_pan_for_index(idx)
-            pan = (lerp(pan0[0], pan1[0], progress), lerp(pan0[1], pan1[1], progress))
-            zoom = lerp(1.0, ZOOM_END, progress)
-            fr = fit_cover(self.scenes[idx], OUT_W, OUT_H, zoom=zoom, pan=pan)
+        scenes_end = TITLE_SECS + sum(self.durations)
+        if t < scenes_end:
+            idx = n - 1
+            for i in range(n):
+                if t < self.starts[i] + self.durations[i]:
+                    idx = i
+                    break
+            span = self.durations[idx]
+            local = t - self.starts[idx]
+            fr = self._scene_frame(idx, local, span)
             # crossfade into next near end of scene
-            if local >= scene_span - XFADE_SECS and idx + 1 < n:
-                fade = (local - (scene_span - XFADE_SECS)) / XFADE_SECS
-                pan0b, pan1b = scene_pan_for_index(idx + 1)
-                fr2 = fit_cover(self.scenes[idx + 1], OUT_W, OUT_H, zoom=1.0, pan=pan0b)
-                fr = blend(fr, fr2, fade)
-            elif local >= scene_span - XFADE_SECS and idx + 1 >= n:
-                fade = (local - (scene_span - XFADE_SECS)) / XFADE_SECS
-                fr = blend(fr, make_end_card(self.title), fade)
+            if local >= span - XFADE_SECS:
+                fade = (local - (span - XFADE_SECS)) / XFADE_SECS
+                if idx + 1 < n:
+                    pan0b, _ = scene_pan_for_index(idx + 1)
+                    fr2 = fit_cover(self.scenes[idx + 1], OUT_W, OUT_H, zoom=1.0, pan=pan0b)
+                    if self.captions[idx + 1]:
+                        fr2 = draw_caption(fr2, self.captions[idx + 1])
+                    fr = blend(fr, fr2, fade)
+                else:
+                    fr = blend(fr, make_end_card(self.title), fade)
             return fr
         return make_end_card(self.title)
 
 
-def export_episode(scenes, title, out_path, progress=None):
-    comp = EpisodeComposer(scenes, title)
+def prepare_narration(captions, status=None):
+    """Make TTS for each non-empty caption. Returns (wavs, durations, warnings).
+    Empty captions -> no audio, normal scene length."""
+    wavs, durs, warns = [], [], []
+    for i, cap in enumerate(captions):
+        cap = clean_caption(cap)
+        if not cap:
+            wavs.append(None)
+            durs.append(SCENE_SECS)
+            continue
+        if status:
+            status(i, len(captions))
+        try:
+            wav, sec, _eng = tts_wav(cap)
+        except Exception as e:
+            wavs.append(None)
+            durs.append(SCENE_SECS)
+            warns.append("장면 %d: 음성을 만들지 못했습니다 (%s)" % (i + 1, str(e)[:160]))
+            continue
+        wavs.append(wav)
+        durs.append(scene_seconds_for(sec))
+    return wavs, durs, warns
+
+
+def export_episode(scenes, title, out_path, progress=None, captions=None, tts_status=None):
+    """Render the episode. Optional per-scene captions are burned in and narrated.
+    Returns list of warnings (empty when everything worked)."""
+    captions = [clean_caption(c) for c in (captions or [])] + [""] * max(0, len(scenes) - len(captions or []))
+    wavs, durs, warns = prepare_narration(captions, tts_status) if any(captions) else ([None] * len(scenes), [SCENE_SECS] * len(scenes), [])
+    comp = EpisodeComposer(scenes, title, captions=captions, durations=durs)
     total = comp.total_seconds()
     nframes = max(1, int(total * FPS))
+    total = nframes / float(FPS)
     ff = ffmpeg_exe()
+    narration = None
+    segs = [(comp.scene_start(i) + TTS_LEAD, w) for i, w in enumerate(wavs) if w]
+    if segs:
+        narration = os.path.join(tempfile.mkdtemp(prefix="gaechu_tts_"), "narration.wav")
+        build_narration(segs, total, narration)
     cmd = [
         ff, "-y", "-loglevel", "error",
         "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", "%dx%d" % (OUT_W, OUT_H),
         "-r", str(FPS), "-i", "-",
-        "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "fast", "-crf", "20",
-        "-movflags", "+faststart", out_path,
     ]
+    if narration:
+        cmd += ["-i", narration, "-map", "0:v", "-map", "1:a",
+                "-c:a", "aac", "-b:a", "160k", "-ar", str(TTS_RATE), "-shortest"]
+    else:
+        cmd += ["-an"]
+    cmd += ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "fast", "-crf", "20",
+            "-movflags", "+faststart", out_path]
     try:
-        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=NO_WINDOW)
     except Exception as e:
         raise RuntimeError("인코더를 시작하지 못했습니다: %s" % e)
     err = b""
+    errbuf = []
+    t_err = threading.Thread(target=lambda: errbuf.append(proc.stderr.read() if proc.stderr else b""), daemon=True)
+    t_err.start()
     try:
         for i in range(nframes):
             t = i / float(FPS)
@@ -457,17 +741,21 @@ def export_episode(scenes, title, out_path, progress=None):
             if progress and (i % 4 == 0 or i == nframes - 1):
                 progress((i + 1) / nframes)
         proc.stdin.close()
-        err = proc.stderr.read() if proc.stderr else b""
-        rc = proc.wait(timeout=120)
+        rc = proc.wait(timeout=180)
+        t_err.join(5)
+        err = errbuf[0] if errbuf else b""
     except Exception as e:
         try:
             proc.kill()
         except Exception:
             pass
         raise RuntimeError(str(e))
+    finally:
+        if narration:
+            shutil.rmtree(os.path.dirname(narration), ignore_errors=True)
     if rc != 0 or not os.path.isfile(out_path) or os.path.getsize(out_path) < 1000:
         raise RuntimeError("영상 내보내기 실패: " + (err.decode("utf-8", "replace")[-400:] if err else "unknown"))
-    return out_path
+    return warns
 
 
 # ------------------------------- App -----------------------------------
@@ -521,6 +809,9 @@ class Studio(tk.Tk):
         self.player_frame = None
         self._player_photo = None
         self._fullscreen = False
+        self._cap_job = None
+        self._cells = []
+        self._audio_tmp = None
         self._style()
         self._build()
         self.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -652,7 +943,7 @@ class Studio(tk.Tk):
         Btn(head, "위로", self.move_up, fill=PANEL, fg=MUT, hover=CARD2,
             font=(FONT_UI, 8, "bold"), padx=8, pady=2).pack(side="right")
 
-        self.strip_canvas = tk.Canvas(strip_wrap, bg=CARD, height=96, highlightthickness=0, cursor="hand2")
+        self.strip_canvas = tk.Canvas(strip_wrap, bg=CARD, height=118, highlightthickness=0, cursor="hand2")
         self.strip_scroll = ttk.Scrollbar(strip_wrap, orient="horizontal", command=self.strip_canvas.xview)
         self.strip_canvas.configure(xscrollcommand=self.strip_scroll.set)
         self.strip_canvas.pack(fill="x", padx=8, pady=(4, 0))
@@ -960,7 +1251,33 @@ class Studio(tk.Tk):
         self._update_player_time()
         self._player_show_still(0.0)
 
+    def _player_audio_stop(self):
+        if os.name == "nt":
+            try:
+                import winsound
+                winsound.PlaySound(None, 0)
+            except Exception:
+                pass
+
+    def _player_audio_start(self, start_t):
+        """Play the episode's sound track (e.g. TTS SUBTITLES narration) from start_t. Silent files: nothing."""
+        if os.name != "nt" or not self.player_path:
+            return
+        try:
+            import winsound
+            if not self._audio_tmp:
+                self._audio_tmp = os.path.join(tempfile.gettempdir(), "gaechu_trass_player.wav")
+            self._player_audio_stop()
+            p = run_hidden([ffmpeg_exe(), "-y", "-loglevel", "error", "-ss", "%.3f" % max(0.0, start_t),
+                            "-i", self.player_path, "-vn", "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le",
+                            self._audio_tmp], timeout=30)
+            if p.returncode == 0 and os.path.isfile(self._audio_tmp) and os.path.getsize(self._audio_tmp) > 1000:
+                winsound.PlaySound(self._audio_tmp, winsound.SND_FILENAME | winsound.SND_ASYNC)
+        except Exception:
+            pass
+
     def _player_kill(self):
+        self._player_audio_stop()
         proc = self.player_proc
         self.player_proc = None
         if proc is None:
@@ -992,10 +1309,11 @@ class Studio(tk.Tk):
             "-vf", "scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:black" % (w, h, w, h),
             "-an", "-sn", "-r", str(FPS), "-"
         ]
+        self._player_audio_start(start_t)
         try:
             self.player_proc = subprocess.Popen(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                bufsize=w * h * 3 * 2)
+                bufsize=w * h * 3 * 2, creationflags=NO_WINDOW)
             self._pipe_t0 = time.time()
             self._pipe_start = start_t
         except Exception as e:
@@ -1180,7 +1498,7 @@ class Studio(tk.Tk):
         if not self.scenes:
             self._draw_empty()
         else:
-            self._show_still(0)
+            self._show_still(self.sel or 0)
 
     def _show_pil(self, im):
         cv = self.canvas
@@ -1201,6 +1519,9 @@ class Studio(tk.Tk):
             return
         idx = max(0, min(idx, len(self.scenes) - 1))
         im = fit_cover(self.scenes[idx]["im"], OUT_W, OUT_H, zoom=1.0, pan=(0.5, 0.5))
+        cap = clean_caption(self.scenes[idx].get("caption", ""))
+        if cap:
+            im = draw_caption(im, cap)
         self._show_pil(im)
 
     def add_images(self):
@@ -1231,9 +1552,7 @@ class Studio(tk.Tk):
             pad = Image.new("RGB", (120, 72), BOARD_RGB)
             pad.paste(thumb, ((120 - thumb.width) // 2, (72 - thumb.height) // 2))
             tk_thumb = ImageTk.PhotoImage(pad)
-            self.scenes.append({
-                "path": p, "name": os.path.basename(p), "im": im, "thumb": tk_thumb,
-            })
+            self.scenes.append(self._new_scene(p, im, tk_thumb))
             added += 1
         if added:
             self.sel = len(self.scenes) - 1
@@ -1242,27 +1561,132 @@ class Studio(tk.Tk):
             self.set_status("%d장 추가됨 · 장면 %d장" % (added, len(self.scenes)), GREEN)
 
     def _refresh_strip(self):
+        """Rebuild scene cells. Each scene owns its own optional TTS SUBTITLES field (kept on reorder)."""
         for w in self.strip_inner.winfo_children():
             w.destroy()
         self.strip_photos = []
+        self._cells = []
         for i, sc in enumerate(self.scenes):
-            cell = tk.Frame(self.strip_inner, bg=RED if i == self.sel else CARD2,
-                            highlightthickness=0, padx=2, pady=2)
+            on = (i == self.sel)
+            cell = tk.Frame(self.strip_inner, bg=RED if on else CARD2, highlightthickness=0, padx=2, pady=2)
             cell.pack(side="left", padx=4, pady=4)
-            lbl = tk.Label(cell, image=sc["thumb"], bg=CARD, cursor="hand2")
+            inner = tk.Frame(cell, bg=CARD)
+            inner.pack()
+            left = tk.Frame(inner, bg=CARD)
+            left.pack(side="left")
+            lbl = tk.Label(left, image=sc["thumb"], bg=CARD, cursor="hand2")
             lbl.pack()
-            cap = tk.Label(cell, text="%d" % (i + 1), bg=cell["bg"], fg=TXT,
-                           font=(FONT_UI, 8, "bold"))
+            cap = tk.Label(left, text="%d" % (i + 1), bg=CARD, fg=TXT, font=(FONT_UI, 8, "bold"))
             cap.pack()
-            for w in (cell, lbl, cap):
+            right = tk.Frame(inner, bg=CARD)
+            right.pack(side="left", fill="y", padx=(6, 6), pady=(2, 2))
+            tk.Label(right, text="TTS SUBTITLES", bg=CARD, fg=MUT, font=(FONT_UI, 7, "bold"),
+                     anchor="w").pack(fill="x")
+            ent_wrap = tk.Frame(right, bg=CARD)
+            ent_wrap.pack(fill="x", pady=(2, 4))
+            ent = tk.Entry(ent_wrap, textvariable=sc["cap_var"], bg=PANEL, fg=TXT, insertbackground=RED,
+                           relief="flat", font=(FONT_MIX, 9), width=26,
+                           highlightthickness=1, highlightbackground=BORDER, highlightcolor=RED)
+            ent.pack(fill="x", ipady=3)
+            ph = tk.Label(ent_wrap, text="(선택) 입력하면 화면 자막 + 음성", bg=PANEL, fg=DIM,
+                          font=(FONT_UI, 8), anchor="w", cursor="xterm")
+            sc["_ent"], sc["_ph"] = ent, ph
+            self._sync_placeholder(sc)
+            ph.bind("<Button-1>", lambda e, en=ent: en.focus_set())
+            ent.bind("<FocusIn>", lambda e, idx=i, s_=sc: (s_["_ph"].place_forget(), self._select(idx)))
+            ent.bind("<FocusOut>", lambda e, s_=sc: self._sync_placeholder(s_))
+            ent.bind("<Return>", lambda e: self.focus_set())
+            Btn(right, "▶ 미리 듣기", lambda s_=sc: self.preview_tts(s_), fill=CARD2, fg=MUT, hover=BORDER,
+                font=(FONT_UI, 8, "bold"), padx=8, pady=2).pack(anchor="w")
+            for w in (cell, inner, left, lbl, cap):
                 w.bind("<Button-1>", lambda e, idx=i: self._select(idx))
                 w.bind("<Double-Button-1>", lambda e, idx=i: self._show_still(idx))
             self.strip_photos.append(sc["thumb"])
+            self._cells.append(cell)
+
+    def _sync_placeholder(self, sc):
+        ent, ph = sc.get("_ent"), sc.get("_ph")
+        if not ent or not ph:
+            return
+        try:
+            focused = (self.focus_get() is ent)
+        except Exception:
+            focused = False
+        if sc["cap_var"].get() or focused:
+            ph.place_forget()
+        else:
+            ph.place(x=6, rely=0.5, anchor="w")
+
+    def _on_caption_change(self, sc):
+        sc["caption"] = sc["cap_var"].get()
+        if sc.get("_ph") and sc["caption"]:
+            sc["_ph"].place_forget()
+        if self.playing or not self.scenes:
+            return
+        if self._cap_job:
+            try:
+                self.after_cancel(self._cap_job)
+            except Exception:
+                pass
+        def redraw():
+            self._cap_job = None
+            if sc in self.scenes and not self.playing:
+                i = self.scenes.index(sc)
+                if i == self.sel:
+                    self._show_still(i)
+        self._cap_job = self.after(120, redraw)
+
+    def _new_scene(self, p, im, thumb):
+        sc = {"path": p, "name": os.path.basename(p), "im": im, "thumb": thumb, "caption": ""}
+        var = tk.StringVar(self, value="")
+        var.trace_add("write", lambda *_a, s_=sc: self._on_caption_change(s_))
+        sc["cap_var"] = var
+        return sc
+
+    def _captions(self):
+        return [clean_caption(sc.get("caption", "")) for sc in self.scenes]
+
+    def preview_tts(self, sc):
+        """미리 듣기: speak this scene's TTS SUBTITLES (optional)."""
+        text = clean_caption(sc["cap_var"].get())
+        if not text:
+            self.set_status("이 장면에는 TTS SUBTITLES가 없습니다 (선택 사항).", MUT)
+            return
+        if sc in self.scenes:
+            self._select(self.scenes.index(sc))
+        self.set_status("음성 만드는 중…", TXT)
+
+        def work():
+            try:
+                wav, sec, eng = tts_wav(text)
+            except Exception as e:
+                self.after(0, lambda: self.set_status("미리 듣기 실패: %s" % str(e)[:200], RED2))
+                return
+            self.after(0, lambda: self._play_wav(wav, sec, eng))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _play_wav(self, wav, sec, eng):
+        voice = eng.split(":", 1)[-1] if eng and eng != "cache" else ""
+        self.set_status("미리 듣기 · %.1f초%s" % (sec, (" · " + voice) if voice else ""), GREEN)
+        if os.name == "nt":
+            try:
+                import winsound
+                winsound.PlaySound(wav, winsound.SND_FILENAME | winsound.SND_ASYNC)
+                return
+            except Exception:
+                pass
+        open_media(wav)
 
     def _select(self, idx):
+        prev = self.sel
         self.sel = idx
-        self._refresh_strip()
-        if not self.playing:
+        cells = getattr(self, "_cells", [])
+        if len(cells) != len(self.scenes):
+            self._refresh_strip()
+        else:
+            for i, c in enumerate(cells):
+                c.configure(bg=RED if i == idx else CARD2)
+        if not self.playing and (prev != idx or True):
             self._show_still(idx)
 
     def remove_selected(self):
@@ -1320,7 +1744,9 @@ class Studio(tk.Tk):
         self.playing = True
         self.play_t0 = time.time()
         imgs = [s["im"] for s in self.scenes]
-        self._composer = EpisodeComposer(imgs, self.ep_title.get())
+        caps = self._captions()
+        durs = [scene_seconds_for(_tts_dur_cache.get(c, 0.0)) if c else SCENE_SECS for c in caps]
+        self._composer = EpisodeComposer(imgs, self.ep_title.get(), captions=caps, durations=durs)
         self.set_status("재생 중…", GREEN)
         self._tick()
 
@@ -1360,6 +1786,7 @@ class Studio(tk.Tk):
         safe = re.sub(r'[\\/:*?"<>|]+', "_", title)[:60]
         out = os.path.join(downloads_dir(), "%s %s %s.mp4" % (APP, safe, time.strftime("%Y-%m-%d %H-%M-%S")))
         imgs = [s["im"] for s in self.scenes]
+        caps = self._captions()
         self._busy(True)
         self.prog.pack(side="right", padx=(8, 0))
         self.prog["value"] = 0
@@ -1369,17 +1796,20 @@ class Studio(tk.Tk):
             self.after(0, lambda: (self.prog.configure(value=v),
                                    self.set_status("내보내는 중… %d%%" % int(v * 100), TXT)))
 
+        def tts_stat(i, n):
+            self.after(0, lambda: self.set_status("TTS SUBTITLES 음성 만드는 중… 장면 %d/%d" % (i + 1, n), TXT))
+
         def work():
             try:
-                export_episode(imgs, title, out, progress=prog)
+                warns = export_episode(imgs, title, out, progress=prog, captions=caps, tts_status=tts_stat)
             except Exception as e:
                 self.after(0, lambda: self._export_done(None, str(e)))
             else:
-                self.after(0, lambda: self._export_done(out, None))
+                self.after(0, lambda: self._export_done(out, None, warns))
 
         threading.Thread(target=work, daemon=True).start()
 
-    def _export_done(self, out, err):
+    def _export_done(self, out, err, warns=None):
         self._busy(False)
         self.prog.pack_forget()
         if err:
@@ -1399,6 +1829,10 @@ class Studio(tk.Tk):
             self.set_status("저장됨 (목록 등록 실패: %s): %s" % (e, out), AMBER)
         else:
             self.set_status("저장됨 · 에피소드 홈에 추가됨: " + out, GREEN)
+        if warns:
+            self.set_status("저장됨 (일부 음성 없음) · " + out, AMBER)
+            messagebox.showwarning(APP, "영상은 저장되었습니다. 자막은 들어갔지만 일부 음성을 만들지 못했습니다:\n\n"
+                                   + "\n".join(warns[:6]), parent=self)
         try:
             if os.name == "nt":
                 os.startfile(os.path.dirname(out))
@@ -1439,7 +1873,45 @@ class Studio(tk.Tk):
         self.destroy()
 
 
+def _selftest_tts(out_dir):
+    """Diagnostic: `개추 트래스.exe --selftest-tts DIR` writes ko/ja/en narration + report."""
+    os.makedirs(out_dir, exist_ok=True)
+    lines = []
+    try:
+        import edge_tts, aiohttp, certifi  # noqa: F401
+        lines.append("imports ok: edge_tts aiohttp certifi")
+    except Exception as e:
+        lines.append("import error: %r" % e)
+    for lang, text in (("ko", "안녕하세요, 개추 트래스입니다."), ("ja", "こんにちは、テストです。"), ("en", "Hello from the episode maker.")):
+        try:
+            wav, sec, eng = tts_wav(text)
+            dst = os.path.join(out_dir, "tts_%s.wav" % lang)
+            shutil.copyfile(wav, dst)
+            lines.append("%s ok %.2fs %s (%s)" % (lang, sec, eng, detect_lang(text)))
+        except Exception as e:
+            lines.append("%s FAIL %s" % (lang, e))
+    try:
+        im = Image.new("RGB", (OUT_W, OUT_H), (60, 90, 120))
+        draw_caption(im, "자막 テスト caption").save(os.path.join(out_dir, "caption_frame.png"))
+        lines.append("caption frame ok")
+    except Exception as e:
+        lines.append("caption frame FAIL %s" % e)
+    try:
+        a = Image.new("RGB", (OUT_W, OUT_H), (40, 70, 110))
+        b = Image.new("RGB", (OUT_W, OUT_H), (110, 60, 40))
+        w = export_episode([a, b], "selftest", os.path.join(out_dir, "mixed.mp4"),
+                           captions=["장면 하나, 음성 테스트입니다.", ""])
+        lines.append("export ok warns=%r size=%d" % (w, os.path.getsize(os.path.join(out_dir, "mixed.mp4"))))
+    except Exception as e:
+        lines.append("export FAIL %s" % e)
+    with open(os.path.join(out_dir, "selftest.txt"), "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+
+
 def main():
+    if len(sys.argv) >= 3 and sys.argv[1] == "--selftest-tts":
+        _selftest_tts(sys.argv[2])
+        return
     app = Studio()
     app.mainloop()
 

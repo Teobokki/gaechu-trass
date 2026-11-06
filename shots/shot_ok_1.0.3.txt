@@ -1,0 +1,5 @@
+default tab=maker maker_mapped=1
+after move_down: ['', '어느 날, 우리는 바다로 떠났다.', 'こんにちは、また会いましたね。', '']
+after move_up: ['어느 날, 우리는 바다로 떠났다.', '', 'こんにちは、また会いましたね。', '']
+captions=['어느 날, 우리는 바다로 떠났다.', '', 'こんにちは、また会いましたね。', '']
+player playing=True t=2.41 dur=41.50
