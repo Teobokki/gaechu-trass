@@ -1,12 +1,14 @@
 {
-  "version": "1.0.2",
-  "url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.0.2/GAECHU-TRASS-Setup-1.0.2.exe",
-  "installer_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.0.2/GAECHU-TRASS-Setup-1.0.2.exe",
-  "full_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.0.2/GAECHU-TRASS-1.0.2-Windows-x64.zip",
-  "portable_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.0.2/GAECHU-TRASS-1.0.2-Windows-x64.zip",
-  "release_url": "https://github.com/Teobokki/gaechu-trass/releases/tag/v1.0.2",
-  "sha256": "c88f85ccd57cbaad0a9d27beda52506d979a4ff0e1f92aa80b5cf38557df4bec",
-  "size": 79956087,
+  "version": "1.0.3",
+  "url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.0.3/GAECHU-TRASS-Setup-1.0.3.exe",
+  "installer_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.0.3/GAECHU-TRASS-Setup-1.0.3.exe",
+  "full_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.0.3/GAECHU-TRASS-1.0.3-Windows-x64.zip",
+  "portable_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.0.3/GAECHU-TRASS-1.0.3-Windows-x64.zip",
+  "release_url": "https://github.com/Teobokki/gaechu-trass/releases/tag/v1.0.3",
+  "sha256": "9b86ca2934c1a15b006080e55c8ca2993ed8ca5685d7ca3d18d2730cabaf0e47",
+  "size": 81732548,
+  "portable_sha256": "937cadc50214c8f5d80b64bfe128a20ad6382c8e84f465ef8b4940d073260e56",
+  "portable_size": 106059758,
   "published": "2026-11-06",
-  "notes": "개추 트래스 1.0.2 — Opens on the ⌂ 개추 트래스 maker board by default. 에피소드 home and in-app player remain for watching the featured episode and your exports."
+  "notes": "개추 트래스 1.0.3 — 장면마다 선택 사항인 TTS SUBTITLES: 입력하면 화면 자막과 음성 내레이션(한국어·日本語·English)이 영상에 들어갑니다. 비워 두면 1.0.2와 같습니다. 긴 문장은 장면이 늘어나 끊기지 않습니다."
 }
