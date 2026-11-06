@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+build/
+dist/
+pyi.log
+iss.log
+*.mp4
+store_art/
+shots/*.xwd
+.wine/
