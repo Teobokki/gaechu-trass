@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""개추 트래스 — Korean-first cinematic episode board.
-Upload any number of pictures from Downloads; compose them as a widescreen episode.
+"""개추 트래스 — Korean-first cinematic episode maker.
+Episode home for saved works; maker board to compose pictures into a widescreen episode.
 ©2026 EX Inc./HYPERION DIGITAL ©2026"""
 from __future__ import annotations
 import json, os, re, shutil, subprocess, sys, tempfile, threading, time, urllib.request, webbrowser
@@ -9,11 +9,21 @@ from tkinter import ttk, filedialog, messagebox
 import tkinter.font as tkfont
 
 APP = "개추 트래스"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 COPYRIGHT = "\u00a92026 EX Inc./HYPERION DIGITAL \u00a92026"
 REPO = "Teobokki/gaechu-trass"
 UPDATE_URL = "https://raw.githubusercontent.com/%s/main/latest.json" % REPO
 CATALOG_ID = "gaechu-trass"
+
+BUNDLED_EPISODE = {
+    "id": "bundled-episode-1",
+    "title": "개추 트래스",
+    "subtitle": "에피소드 1",
+    "created": "2026-11-06T00:00:00",
+    "bundled": True,
+    "mp4_rel": ("assets", "episodes", "episode1.mp4"),
+    "poster_rel": ("assets", "episodes", "episode1_poster.jpg"),
+}
 
 BG, PANEL, CARD, CARD2, BORDER = "#0b0b0d", "#121216", "#18181d", "#24242b", "#2c2c34"
 TXT, MUT, DIM = "#f2f2f4", "#9a9aa6", "#5d5d66"
@@ -65,6 +75,94 @@ def downloads_dir():
             pass
     os.makedirs(d, exist_ok=True)
     return d
+
+
+def app_data_dir():
+    """Per-user app data: %LOCALAPPDATA%\\개추 트래스 on Windows."""
+    if os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), "AppData", "Local")
+    else:
+        base = os.path.join(os.path.expanduser("~"), ".local", "share")
+    d = os.path.join(base, APP)
+    os.makedirs(d, exist_ok=True)
+    os.makedirs(os.path.join(d, "posters"), exist_ok=True)
+    return d
+
+
+def library_path():
+    return os.path.join(app_data_dir(), "library.json")
+
+
+def load_library():
+    p = library_path()
+    if not os.path.isfile(p):
+        return []
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        eps = data.get("episodes") if isinstance(data, dict) else None
+        return [e for e in (eps or []) if isinstance(e, dict)]
+    except Exception:
+        return []
+
+
+def save_library(episodes):
+    with open(library_path(), "w", encoding="utf-8") as f:
+        json.dump({"version": 1, "episodes": episodes}, f, ensure_ascii=False, indent=2)
+
+
+def open_media(path):
+    """Open a local video with the OS default player."""
+    if not path or not os.path.isfile(path):
+        return False
+    try:
+        if os.name == "nt":
+            os.startfile(path)  # type: ignore[attr-defined]
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", path])
+        else:
+            subprocess.Popen(["xdg-open", path])
+        return True
+    except Exception:
+        try:
+            webbrowser.open("file:///" + path.replace("\\", "/"))
+            return True
+        except Exception:
+            return False
+
+
+def episode_paths(ep):
+    """Return (mp4_path, poster_path) for a library or bundled episode."""
+    if ep.get("bundled"):
+        mp4 = res_path(*ep.get("mp4_rel", ("assets", "episodes", "episode1.mp4")))
+        poster = res_path(*ep.get("poster_rel", ("assets", "episodes", "episode1_poster.jpg")))
+        return mp4, poster
+    return ep.get("mp4") or "", ep.get("poster") or ""
+
+
+def probe_duration(path):
+    """Best-effort duration in seconds via ffmpeg -i stderr."""
+    try:
+        ff = ffmpeg_exe()
+        p = subprocess.run([ff, "-i", path], capture_output=True, timeout=20)
+        err = (p.stderr or b"").decode("utf-8", "replace")
+        m = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", err)
+        if m:
+            return int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
+    except Exception:
+        pass
+    return 0.0
+
+
+def all_episodes():
+    """Featured bundled episode first, then user exports (newest first)."""
+    out = [dict(BUNDLED_EPISODE)]
+    for e in load_library():
+        if e.get("id") == BUNDLED_EPISODE["id"] or e.get("bundled"):
+            continue
+        out.append(e)
+    return out
+
 
 
 def register_fonts():
@@ -406,10 +504,27 @@ class Studio(tk.Tk):
         self.strip_photos = []
         self._drag = None
         self.ep_title = tk.StringVar(value="에피소드 1")
+        self.tab = "home"  # home | maker — default episode home
+        self.library = load_library()
+        self._home_photos = []
+        self._nav = {}
+        self.player_path = None
+        self.player_title = ""
+        self.player_proc = None
+        self.player_playing = False
+        self.player_t = 0.0
+        self.player_dur = 0.0
+        self.player_w = 960
+        self.player_h = 540
+        self.player_job = None
+        self.player_seeking = False
+        self.player_frame = None
+        self._player_photo = None
+        self._fullscreen = False
         self._style()
         self._build()
         self.protocol("WM_DELETE_WINDOW", self.on_close)
-        self.after(200, self._draw_empty)
+        self.after(200, self._refresh_home)
         self._setup_drop()
 
     def _style(self):
@@ -437,18 +552,65 @@ class Studio(tk.Tk):
 
         nav = tk.Frame(top, bg=PANEL)
         nav.pack(side="left", padx=(28, 0), fill="y")
-        f = tk.Frame(nav, bg=PANEL)
-        f.pack(side="left", padx=2, fill="y")
-        l = tk.Label(f, text="⌂  보드", bg=PANEL, fg=TXT, font=(FONT_UI, 10, "bold"), padx=14, pady=8)
-        l.pack(side="top", fill="y", expand=True)
-        tk.Frame(f, bg=RED, height=3).pack(side="bottom", fill="x")
+        self._nav = {}
+        for key, label in (("home", "에피소드"), ("maker", "⌂  개추 트래스")):
+            f = tk.Frame(nav, bg=PANEL)
+            f.pack(side="left", padx=2, fill="y")
+            l = tk.Label(f, text=label, bg=PANEL, fg=TXT, font=(FONT_UI, 10, "bold"),
+                         padx=14, pady=8, cursor="hand2")
+            l.pack(side="top", fill="y", expand=True)
+            bar = tk.Frame(f, bg=RED if key == "home" else PANEL, height=3)
+            bar.pack(side="bottom", fill="x")
+            l.bind("<Button-1>", lambda e, k=key: self.show_tab(k))
+            f.bind("<Button-1>", lambda e, k=key: self.show_tab(k))
+            self._nav[key] = {"frame": f, "label": l, "bar": bar}
 
         tk.Label(self, text=COPYRIGHT, bg=PANEL, fg=DIM, font=(FONT_UI, 8), pady=3).pack(side="bottom", fill="x")
 
         self.body = tk.Frame(self, bg=BG)
         self.body.pack(fill="both", expand=True)
 
-        bar = tk.Frame(self.body, bg=BG)
+        # ---- Episode home (default) ----
+        self.page_home = tk.Frame(self.body, bg=BG)
+        self._build_home(self.page_home)
+
+        # ---- Maker / board ----
+        self.page_maker = tk.Frame(self.body, bg=BG)
+        self._build_maker(self.page_maker)
+
+        self.page_player = tk.Frame(self.body, bg="#000000")
+        self._build_player(self.page_player)
+
+        self.page_home.pack(fill="both", expand=True)
+        self.page_maker.pack_forget()
+        self.page_player.pack_forget()
+
+    def _build_home(self, root):
+        head = tk.Frame(root, bg=BG)
+        head.pack(fill="x", padx=22, pady=(18, 8))
+        tk.Label(head, text="에피소드", bg=BG, fg=TXT, font=(FONT_UI, 20, "bold")).pack(side="left")
+        tk.Label(head, text="내가 만든 에피소드", bg=BG, fg=MUT, font=(FONT_UI, 10)).pack(side="left", padx=(12, 0), pady=(8, 0))
+        Btn(head, "＋  새로 만들기", lambda: self.show_tab("maker"), fill=RED, fg="white", hover=RED2).pack(side="right")
+
+        self.home_status = tk.Label(root, text="", bg=BG, fg=MUT, font=(FONT_UI, 9), anchor="w")
+        self.home_status.pack(fill="x", padx=22, pady=(0, 4))
+
+        wrap = tk.Frame(root, bg=BG)
+        wrap.pack(fill="both", expand=True, padx=14, pady=(0, 12))
+        self.home_canvas = tk.Canvas(wrap, bg=BG, highlightthickness=0)
+        self.home_scroll = ttk.Scrollbar(wrap, orient="vertical", command=self.home_canvas.yview)
+        self.home_canvas.configure(yscrollcommand=self.home_scroll.set)
+        self.home_scroll.pack(side="right", fill="y")
+        self.home_canvas.pack(side="left", fill="both", expand=True)
+        self.home_inner = tk.Frame(self.home_canvas, bg=BG)
+        self.home_win = self.home_canvas.create_window((0, 0), window=self.home_inner, anchor="nw")
+        self.home_inner.bind("<Configure>", lambda e: self.home_canvas.configure(
+            scrollregion=self.home_canvas.bbox("all")))
+        self.home_canvas.bind("<Configure>", lambda e: self.home_canvas.itemconfigure(
+            self.home_win, width=e.width))
+
+    def _build_maker(self, root):
+        bar = tk.Frame(root, bg=BG)
         bar.pack(fill="x", padx=16, pady=(12, 8))
         Btn(bar, "⬆  이미지 추가", self.add_images, fill=RED, fg="white", hover=RED2).pack(side="left")
         self.b_play = Btn(bar, "▶  재생", self.play)
@@ -469,8 +631,7 @@ class Studio(tk.Tk):
                          image=self._trash, compound="left")
         self.b_bin.pack(side="right", padx=(0, 8))
 
-        # status
-        stat = tk.Frame(self.body, bg=BG)
+        stat = tk.Frame(root, bg=BG)
         stat.pack(side="bottom", fill="x", padx=16, pady=(0, 6))
         self.status = tk.Label(stat, text="다운로드에서 그림이나 사진을 올려 시작하세요.", bg=BG, fg=MUT,
                                font=(FONT_UI, 9), anchor="w")
@@ -478,8 +639,7 @@ class Studio(tk.Tk):
         self.prog = ttk.Progressbar(stat, style="red.Horizontal.TProgressbar", length=180,
                                     mode="determinate", maximum=1.0)
 
-        # scene strip
-        strip_wrap = tk.Frame(self.body, bg=PANEL, highlightbackground=BORDER, highlightthickness=1)
+        strip_wrap = tk.Frame(root, bg=PANEL, highlightbackground=BORDER, highlightthickness=1)
         strip_wrap.pack(side="bottom", fill="x", padx=16, pady=(0, 8))
         head = tk.Frame(strip_wrap, bg=PANEL)
         head.pack(fill="x", padx=10, pady=(8, 0))
@@ -501,13 +661,461 @@ class Studio(tk.Tk):
         self.strip_inner.bind("<Configure>", lambda e: self.strip_canvas.configure(
             scrollregion=self.strip_canvas.bbox("all")))
 
-        # main board
-        board = tk.Frame(self.body, bg=CARD2, highlightbackground=BORDER, highlightthickness=1)
+        board = tk.Frame(root, bg=CARD2, highlightbackground=BORDER, highlightthickness=1)
         board.pack(fill="both", expand=True, padx=16, pady=(0, 8))
         self.canvas = tk.Canvas(board, bg="#000000", highlightthickness=0)
         self.canvas.pack(fill="both", expand=True)
         self.canvas.bind("<Configure>", lambda e: self._on_resize())
         self.canvas.bind("<Button-1>", lambda e: self.add_images() if not self.scenes else None)
+
+    def _build_player(self, root):
+        top = tk.Frame(root, bg=PANEL)
+        top.pack(fill="x")
+        Btn(top, "←  에피소드", self.close_player, fill=PANEL, fg=TXT, hover=CARD2,
+            font=(FONT_UI, 10, "bold")).pack(side="left", padx=10, pady=8)
+        self.player_title_lbl = tk.Label(top, text="", bg=PANEL, fg=TXT, font=(FONT_UI, 13, "bold"))
+        self.player_title_lbl.pack(side="left", padx=(6, 0))
+        Btn(top, "전체 화면", self.toggle_fullscreen, fill=PANEL, fg=MUT, hover=CARD2,
+            font=(FONT_UI, 9, "bold")).pack(side="right", padx=12)
+
+        stage = tk.Frame(root, bg="#000000")
+        stage.pack(fill="both", expand=True)
+        self.player_canvas = tk.Canvas(stage, bg="#000000", highlightthickness=0)
+        self.player_canvas.pack(fill="both", expand=True)
+        self.player_canvas.bind("<Configure>", lambda e: self._player_redraw())
+        self.player_canvas.bind("<Button-1>", lambda e: self.player_toggle())
+
+        ctrl = tk.Frame(root, bg=PANEL)
+        ctrl.pack(fill="x")
+        row = tk.Frame(ctrl, bg=PANEL)
+        row.pack(fill="x", padx=14, pady=(10, 4))
+        self.b_p_play = Btn(row, "▶  재생", self.player_play, fill=RED, fg="white", hover=RED2,
+                            font=(FONT_UI, 10, "bold"), padx=16, pady=6)
+        self.b_p_play.pack(side="left")
+        self.b_p_pause = Btn(row, "⏸  일시정지", self.player_pause, fill=CARD2,
+                             font=(FONT_UI, 10, "bold"), padx=14, pady=6)
+        self.b_p_pause.pack(side="left", padx=(8, 0))
+        self.b_p_stop = Btn(row, "■  정지", self.player_stop, fill=CARD2,
+                            font=(FONT_UI, 10, "bold"), padx=14, pady=6)
+        self.b_p_stop.pack(side="left", padx=(8, 0))
+        self.player_time_lbl = tk.Label(row, text="0:00 / 0:00", bg=PANEL, fg=MUT, font=(FONT_UI, 10))
+        self.player_time_lbl.pack(side="right")
+
+        seek_row = tk.Frame(ctrl, bg=PANEL)
+        seek_row.pack(fill="x", padx=14, pady=(0, 12))
+        self.player_seek = ttk.Scale(seek_row, from_=0, to=1000, orient="horizontal",
+                                     command=self._on_seek_drag)
+        self.player_seek.pack(fill="x")
+        self.player_seek.bind("<ButtonPress-1>", lambda e: setattr(self, "player_seeking", True))
+        self.player_seek.bind("<ButtonRelease-1>", self._on_seek_release)
+
+    def show_tab(self, key):
+        if key not in ("home", "maker"):
+            return
+        if self.page_player.winfo_ismapped():
+            self.player_pause()
+            self._player_kill()
+            if self._fullscreen:
+                try:
+                    self.toggle_fullscreen()
+                except Exception:
+                    pass
+            self.page_player.pack_forget()
+        self.tab = key
+        for k, parts in self._nav.items():
+            parts["bar"].configure(bg=RED if k == key else PANEL)
+            parts["label"].configure(fg=TXT if k == key else MUT)
+        self.page_player.pack_forget()
+        if key == "home":
+            self.page_maker.pack_forget()
+            self.page_home.pack(fill="both", expand=True)
+            self._refresh_home()
+        else:
+            self.page_home.pack_forget()
+            self.page_maker.pack(fill="both", expand=True)
+            self.after(50, lambda: self._draw_empty() if not self.scenes else self._show_still(self.sel or 0))
+
+    def _refresh_home(self):
+        for w in self.home_inner.winfo_children():
+            w.destroy()
+        self._home_photos = []
+        self.library = load_library()
+        eps = []
+        for e in all_episodes():
+            mp4, _poster = episode_paths(e)
+            if e.get("bundled"):
+                if os.path.isfile(mp4):
+                    eps.append(e)
+                continue
+            if mp4 and os.path.isfile(mp4):
+                eps.append(e)
+        if not eps:
+            empty = tk.Frame(self.home_inner, bg=BG)
+            empty.pack(fill="both", expand=True, pady=80)
+            try:
+                lg = Image.open(res_path("assets", "icon256.png")).resize((96, 96), Image.LANCZOS)
+                self._home_empty_logo = ImageTk.PhotoImage(lg)
+                tk.Label(empty, image=self._home_empty_logo, bg=BG).pack()
+            except Exception:
+                pass
+            tk.Label(empty, text=APP, bg=BG, fg=TXT, font=(FONT_UI, 18, "bold")).pack(pady=(16, 6))
+            tk.Label(empty, text="아직 에피소드가 없습니다.\n개추 트래스에서 만들어 보세요.",
+                     bg=BG, fg=MUT, font=(FONT_UI, 12), justify="center").pack()
+            Btn(empty, "개추 트래스로 만들기", lambda: self.show_tab("maker"),
+                fill=RED, fg="white", hover=RED2).pack(pady=(22, 0))
+            self.home_status.configure(text="")
+            return
+
+        self.home_status.configure(text="%d개 에피소드 · 홈에서 바로 시청" % len(eps))
+        self._home_card(self.home_inner, eps[0], hero_mode=True)
+        row = tk.Frame(self.home_inner, bg=BG)
+        row.pack(fill="x", padx=8, pady=(8, 4))
+        tk.Label(row, text="내 에피소드", bg=BG, fg=MUT, font=(FONT_UI, 9, "bold")).pack(anchor="w")
+        grid = tk.Frame(self.home_inner, bg=BG)
+        grid.pack(fill="x", padx=4, pady=(0, 16))
+        cols = 3
+        for i, ep in enumerate(eps):
+            cell = tk.Frame(grid, bg=BG)
+            cell.grid(row=i // cols, column=i % cols, sticky="nsew", padx=8, pady=10)
+            self._home_card(cell, ep, hero_mode=False)
+        for c in range(cols):
+            grid.grid_columnconfigure(c, weight=1)
+
+    def _home_card(self, parent, ep, hero_mode=False):
+        title = str(ep.get("title") or "에피소드")
+        created = str(ep.get("created") or "")
+        date_txt = created[:10] if created else ""
+        mp4, poster_path = episode_paths(ep)
+        featured = bool(ep.get("bundled"))
+
+        if hero_mode:
+            card = tk.Frame(parent, bg=CARD, highlightbackground=BORDER, highlightthickness=1)
+            card.pack(fill="x", padx=8, pady=(4, 12))
+            left = tk.Frame(card, bg="#000000")
+            left.pack(side="left")
+            ph = self._poster_photo(poster_path, (420, 236))
+            if ph:
+                self._home_photos.append(ph)
+                lbl = tk.Label(left, image=ph, bg="#000000", cursor="hand2")
+                lbl.pack()
+                lbl.bind("<Button-1>", lambda e, ee=ep: self.play_episode(ee))
+            right = tk.Frame(card, bg=CARD)
+            right.pack(side="left", fill="both", expand=True, padx=22, pady=22)
+            badge = "추천 에피소드" if featured else "최근 에피소드"
+            tk.Label(right, text=badge, bg=CARD, fg=RED2, font=(FONT_UI, 9, "bold")).pack(anchor="w")
+            tk.Label(right, text=title, bg=CARD, fg=TXT, font=(FONT_UI, 18, "bold"),
+                     wraplength=420, justify="left").pack(anchor="w", pady=(6, 4))
+            sub = str(ep.get("subtitle") or "").strip()
+            if sub:
+                tk.Label(right, text=sub, bg=CARD, fg=MUT, font=(FONT_UI, 11)).pack(anchor="w")
+            if date_txt:
+                tk.Label(right, text=date_txt, bg=CARD, fg=MUT, font=(FONT_UI, 10)).pack(anchor="w", pady=(4, 0))
+            btns = tk.Frame(right, bg=CARD)
+            btns.pack(anchor="w", pady=(18, 0))
+            Btn(btns, "▶  재생", lambda ee=ep: self.play_episode(ee), fill=RED, fg="white", hover=RED2).pack(side="left")
+            if not featured:
+                Btn(btns, "삭제", lambda ee=ep: self.remove_episode(ee), fill=CARD2, fg=MUT, hover="#5a1f1f").pack(side="left", padx=(8, 0))
+            return
+
+        card = tk.Frame(parent, bg=CARD, highlightbackground=BORDER, highlightthickness=1)
+        card.pack(fill="both", expand=True)
+        ph = self._poster_photo(poster_path, (280, 158))
+        if ph:
+            self._home_photos.append(ph)
+            lbl = tk.Label(card, image=ph, bg="#000000", cursor="hand2")
+            lbl.pack(fill="x")
+            lbl.bind("<Button-1>", lambda e, ee=ep: self.play_episode(ee))
+        else:
+            tk.Frame(card, bg="#000000", height=158).pack(fill="x")
+        meta = tk.Frame(card, bg=CARD)
+        meta.pack(fill="x", padx=10, pady=10)
+        tk.Label(meta, text=title, bg=CARD, fg=TXT, font=(FONT_UI, 11, "bold"),
+                 wraplength=250, justify="left", anchor="w").pack(fill="x")
+        sub = str(ep.get("subtitle") or "").strip()
+        if sub:
+            tk.Label(meta, text=sub, bg=CARD, fg=MUT, font=(FONT_UI, 9)).pack(anchor="w")
+        if date_txt:
+            tk.Label(meta, text=date_txt, bg=CARD, fg=DIM, font=(FONT_UI, 8)).pack(anchor="w", pady=(2, 6))
+        row = tk.Frame(meta, bg=CARD)
+        row.pack(fill="x")
+        Btn(row, "▶  재생", lambda ee=ep: self.play_episode(ee), fill=CARD2, hover=BORDER,
+            font=(FONT_UI, 9, "bold"), padx=10, pady=4).pack(side="left")
+        if not featured:
+            Btn(row, "삭제", lambda ee=ep: self.remove_episode(ee), fill=PANEL, fg=MUT, hover="#5a1f1f",
+                font=(FONT_UI, 9, "bold"), padx=10, pady=4).pack(side="right")
+
+    def _poster_photo(self, path, size):
+        try:
+            if path and os.path.isfile(path):
+                im = Image.open(path).convert("RGB")
+            else:
+                im = Image.new("RGB", size, (18, 18, 22))
+            im = ImageOps.fit(im, size, Image.LANCZOS)
+            return ImageTk.PhotoImage(im)
+        except Exception:
+            return None
+
+    def play_episode(self, ep_or_path):
+        """Open the in-app cinematic player for an episode dict or mp4 path."""
+        if isinstance(ep_or_path, dict):
+            ep = ep_or_path
+            mp4, _p = episode_paths(ep)
+            title = str(ep.get("title") or "에피소드")
+        else:
+            mp4 = ep_or_path
+            title = os.path.splitext(os.path.basename(mp4 or ""))[0] or "에피소드"
+        if not mp4 or not os.path.isfile(mp4):
+            messagebox.showinfo(APP, "영상 파일을 찾을 수 없습니다.", parent=self)
+            self._refresh_home()
+            return
+        self.open_player(mp4, title)
+
+    def remove_episode(self, ep):
+        if ep.get("bundled") or ep.get("id") == BUNDLED_EPISODE["id"]:
+            messagebox.showinfo(APP, "기본 에피소드는 삭제할 수 없습니다.", parent=self)
+            return
+        title = str(ep.get("title") or "에피소드")
+        if not messagebox.askyesno(APP, "'%s' 에피소드를 목록에서 삭제할까요?\n(저장된 MP4 파일은 그대로 둡니다.)" % title, parent=self):
+            return
+        eid = ep.get("id")
+        self.library = [e for e in load_library() if e.get("id") != eid]
+        save_library(self.library)
+        poster = ep.get("poster") or ""
+        try:
+            if poster and poster.startswith(app_data_dir()) and os.path.isfile(poster):
+                os.remove(poster)
+        except Exception:
+            pass
+        self._refresh_home()
+
+    # -------------------- in-app player --------------------
+    def open_player(self, path, title):
+        self.stop()  # stop maker preview if any
+        self._player_kill()
+        self.player_path = path
+        self.player_title = title
+        self.player_title_lbl.configure(text=title)
+        self.player_t = 0.0
+        self.player_dur = probe_duration(path) or 41.5
+        self.player_playing = False
+        self.player_seek.set(0)
+        self._update_player_time()
+        self.page_home.pack_forget()
+        self.page_maker.pack_forget()
+        self.page_player.pack(fill="both", expand=True)
+        # show poster/first frame then autoplay
+        self._player_show_still(0.0)
+        self.after(200, self.player_play)
+
+    def close_player(self):
+        self.player_pause()
+        self._player_kill()
+        if self._fullscreen:
+            try:
+                self.toggle_fullscreen()
+            except Exception:
+                pass
+        self.page_player.pack_forget()
+        key = self.tab if self.tab in ("home", "maker") else "home"
+        self.show_tab(key)
+
+    def toggle_fullscreen(self):
+        self._fullscreen = not self._fullscreen
+        try:
+            self.attributes("-fullscreen", self._fullscreen)
+        except Exception:
+            self.state("zoomed" if self._fullscreen else "normal")
+
+    def player_toggle(self):
+        if self.player_playing:
+            self.player_pause()
+        else:
+            self.player_play()
+
+    def player_play(self):
+        if not self.player_path:
+            return
+        if self.player_t >= max(0.1, self.player_dur - 0.15):
+            self.player_t = 0.0
+        self.player_playing = True
+        self._player_start_pipe(self.player_t)
+        self._player_tick()
+
+    def player_pause(self):
+        self.player_playing = False
+        if self.player_job:
+            try:
+                self.after_cancel(self.player_job)
+            except Exception:
+                pass
+            self.player_job = None
+        # keep current frame; kill pipe so seek can restart cleanly
+        self._player_kill()
+
+    def player_stop(self):
+        self.player_pause()
+        self.player_t = 0.0
+        self.player_seek.set(0)
+        self._update_player_time()
+        self._player_show_still(0.0)
+
+    def _player_kill(self):
+        proc = self.player_proc
+        self.player_proc = None
+        if proc is None:
+            return
+        try:
+            if proc.stdout:
+                proc.stdout.close()
+        except Exception:
+            pass
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        try:
+            proc.wait(timeout=1)
+        except Exception:
+            pass
+
+    def _player_start_pipe(self, start_t):
+        self._player_kill()
+        ff = ffmpeg_exe()
+        # Scale for smooth UI playback; letterbox is applied when drawing
+        w, h = self.player_w, self.player_h
+        cmd = [
+            ff, "-hide_banner", "-loglevel", "error",
+            "-ss", "%.3f" % max(0.0, start_t),
+            "-i", self.player_path,
+            "-f", "rawvideo", "-pix_fmt", "rgb24",
+            "-vf", "scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:black" % (w, h, w, h),
+            "-an", "-sn", "-r", str(FPS), "-"
+        ]
+        try:
+            self.player_proc = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                bufsize=w * h * 3 * 2)
+            self._pipe_t0 = time.time()
+            self._pipe_start = start_t
+        except Exception as e:
+            self.player_proc = None
+            messagebox.showerror(APP, "재생을 시작할 수 없습니다:\n%s" % e, parent=self)
+            self.player_playing = False
+
+    def _player_read_frame(self):
+        proc = self.player_proc
+        if not proc or not proc.stdout:
+            return None
+        need = self.player_w * self.player_h * 3
+        buf = b""
+        while len(buf) < need:
+            chunk = proc.stdout.read(need - len(buf))
+            if not chunk:
+                return None
+            buf += chunk
+        return Image.frombytes("RGB", (self.player_w, self.player_h), buf)
+
+    def _player_tick(self):
+        if not self.player_playing:
+            return
+        im = self._player_read_frame()
+        if im is None:
+            self.player_playing = False
+            self.player_t = self.player_dur
+            self._update_player_time()
+            self._player_kill()
+            return
+        self.player_frame = im
+        elapsed = time.time() - self._pipe_t0
+        self.player_t = min(self.player_dur, self._pipe_start + elapsed)
+        if not self.player_seeking and self.player_dur > 0:
+            self.player_seek.set(1000.0 * self.player_t / self.player_dur)
+        self._update_player_time()
+        self._player_redraw()
+        self.player_job = self.after(int(1000 / FPS), self._player_tick)
+
+    def _player_show_still(self, t):
+        """Grab a single frame at t via ffmpeg for poster/seek preview."""
+        ff = ffmpeg_exe()
+        w, h = self.player_w, self.player_h
+        cmd = [
+            ff, "-hide_banner", "-loglevel", "error",
+            "-ss", "%.3f" % max(0.0, t), "-i", self.player_path,
+            "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24",
+            "-vf", "scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:black" % (w, h, w, h),
+            "-"
+        ]
+        try:
+            p = subprocess.run(cmd, capture_output=True, timeout=20)
+            need = w * h * 3
+            if p.stdout and len(p.stdout) >= need:
+                self.player_frame = Image.frombytes("RGB", (w, h), p.stdout[:need])
+                self._player_redraw()
+        except Exception:
+            pass
+
+    def _player_redraw(self):
+        cv = getattr(self, "player_canvas", None)
+        if cv is None:
+            return
+        cw, ch = max(1, cv.winfo_width()), max(1, cv.winfo_height())
+        cv.delete("all")
+        im = self.player_frame
+        if im is None:
+            return
+        # letterbox fit
+        scale = min(cw / im.width, ch / im.height)
+        nw, nh = max(1, int(im.width * scale)), max(1, int(im.height * scale))
+        shown = im.resize((nw, nh), Image.BILINEAR)
+        self._player_photo = ImageTk.PhotoImage(shown)
+        cv.create_image(cw // 2, ch // 2, image=self._player_photo)
+
+    def _update_player_time(self):
+        def fmt(s):
+            s = max(0, int(s))
+            return "%d:%02d" % (s // 60, s % 60)
+        if hasattr(self, "player_time_lbl"):
+            self.player_time_lbl.configure(text="%s / %s" % (fmt(self.player_t), fmt(self.player_dur)))
+
+    def _on_seek_drag(self, _val=None):
+        if not self.player_seeking or self.player_dur <= 0:
+            return
+        self.player_t = (float(self.player_seek.get()) / 1000.0) * self.player_dur
+        self._update_player_time()
+
+    def _on_seek_release(self, _e=None):
+        self.player_seeking = False
+        if self.player_dur <= 0 or not self.player_path:
+            return
+        self.player_t = (float(self.player_seek.get()) / 1000.0) * self.player_dur
+        was = self.player_playing
+        self.player_pause()
+        self._player_show_still(self.player_t)
+        if was:
+            self.player_play()
+
+    def _register_export(self, out, title, poster_im=None):
+        """Add an exported episode to the home library."""
+        eid = time.strftime("%Y%m%d%H%M%S") + "-%d" % (int(time.time() * 1000) % 1000)
+        poster_path = ""
+        try:
+            if poster_im is not None:
+                poster_path = os.path.join(app_data_dir(), "posters", eid + ".jpg")
+                poster_im.convert("RGB").resize((640, 360), Image.LANCZOS).save(poster_path, "JPEG", quality=88)
+        except Exception:
+            poster_path = ""
+        entry = {
+            "id": eid,
+            "title": title,
+            "created": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "mp4": out,
+            "poster": poster_path,
+        }
+        eps = load_library()
+        eps.insert(0, entry)
+        save_library(eps)
+        self.library = eps
+        return entry
 
     def _setup_drop(self):
         """Best-effort drag-and-drop of image files onto the board (Windows)."""
@@ -777,7 +1385,19 @@ class Studio(tk.Tk):
             self.set_status("내보내기 실패: " + err, RED2)
             messagebox.showerror(APP, "내보내기 실패:\n" + err, parent=self)
             return
-        self.set_status("저장됨: " + out, GREEN)
+        title = (self.ep_title.get() or "에피소드").strip() or "에피소드"
+        poster_im = None
+        try:
+            if self.scenes:
+                poster_im = fit_cover(self.scenes[0]["im"], 640, 360, zoom=1.0, pan=(0.5, 0.5))
+        except Exception:
+            poster_im = None
+        try:
+            self._register_export(out, title, poster_im)
+        except Exception as e:
+            self.set_status("저장됨 (목록 등록 실패: %s): %s" % (e, out), AMBER)
+        else:
+            self.set_status("저장됨 · 에피소드 홈에 추가됨: " + out, GREEN)
         try:
             if os.name == "nt":
                 os.startfile(os.path.dirname(out))
@@ -808,6 +1428,13 @@ class Studio(tk.Tk):
 
     def on_close(self):
         self.stop()
+        self.player_pause()
+        self._player_kill()
+        try:
+            if self._fullscreen:
+                self.attributes("-fullscreen", False)
+        except Exception:
+            pass
         self.destroy()
 
 

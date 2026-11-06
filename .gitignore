@@ -5,6 +5,8 @@ dist/
 pyi.log
 iss.log
 *.mp4
+!assets/episodes/*.mp4
+!assets/episodes/*.jpg
 store_art/
 shots/*.xwd
 .wine/

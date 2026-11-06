@@ -8,11 +8,12 @@ Add any number of pictures or art from your Downloads folder onto the board. 개
 
 - UI language: Korean
 - Episode title accepts Hangul, Japanese (kana/kanji), and English — fonts bundled (Noto Sans KR + Noto Sans CJK KR)
+- Episode home (default): watch the featured episode and your exports in-app
 - Reorder scenes, remove one, or clear the board
 - Per-user install, no admin needed
 
 ## Install
-Download `GAECHU-TRASS-Setup-1.0.0.exe` from [Releases](https://github.com/Teobokki/gaechu-trass/releases/latest). Or unzip the portable build and run `개추 트래스.exe`.
+Download `GAECHU-TRASS-Setup-1.0.1.exe` from [Releases](https://github.com/Teobokki/gaechu-trass/releases/latest). Or unzip the portable build and run `개추 트래스.exe`.
 
 ## Credits
 Fonts: Noto Sans KR / Noto Sans CJK KR (SIL Open Font License, `fonts/OFL.txt`).
