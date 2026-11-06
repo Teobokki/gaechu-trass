@@ -9,7 +9,7 @@ from tkinter import ttk, filedialog, messagebox
 import tkinter.font as tkfont
 
 APP = "개추 트래스"
-APP_VERSION = "1.0.3"
+APP_VERSION = "1.0.4"
 COPYRIGHT = "\u00a92026 EX Inc./HYPERION DIGITAL \u00a92026"
 REPO = "Teobokki/gaechu-trass"
 UPDATE_URL = "https://raw.githubusercontent.com/%s/main/latest.json" % REPO
@@ -844,7 +844,7 @@ class Studio(tk.Tk):
         nav = tk.Frame(top, bg=PANEL)
         nav.pack(side="left", padx=(28, 0), fill="y")
         self._nav = {}
-        for key, label in (("home", "에피소드"), ("maker", "⌂  개추 트래스")):
+        for key, label in (("maker", "⌂  개추 트래스"), ("home", "에피소드")):
             f = tk.Frame(nav, bg=PANEL)
             f.pack(side="left", padx=2, fill="y")
             l = tk.Label(f, text=label, bg=PANEL, fg=(TXT if key == "maker" else MUT), font=(FONT_UI, 10, "bold"),

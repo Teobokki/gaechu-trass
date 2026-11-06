@@ -8,13 +8,13 @@ Add any number of pictures or art from your Downloads folder onto the board. 개
 
 - UI language: Korean
 - Episode title accepts Hangul, Japanese (kana/kanji), and English — fonts bundled (Noto Sans KR + Noto Sans CJK KR)
-- Opens on the ⌂ 개추 트래스 maker board; 에피소드 home still holds the featured episode and your exports
+- Top bar: ⌂ 개추 트래스 maker first, 에피소드 watching second; opens on the maker board. 에피소드 home still holds the featured episode and your exports
 - Optional **TTS SUBTITLES** on every scene: type a line (Korean, Japanese, or English) and it is burned in as a caption and narrated in the exported MP4. Leave it empty and that scene stays silent with no caption. Scenes stretch so speech is never cut off. Neural voices need an internet connection at export; offline it falls back to installed Windows voices.
 - Reorder scenes, remove one, or clear the board
 - Per-user install, no admin needed
 
 ## Install
-Download `GAECHU-TRASS-Setup-1.0.3.exe` from [Releases](https://github.com/Teobokki/gaechu-trass/releases/latest). Or unzip the portable build and run `개추 트래스.exe`.
+Download `GAECHU-TRASS-Setup-1.0.4.exe` from [Releases](https://github.com/Teobokki/gaechu-trass/releases/latest). Or unzip the portable build and run `개추 트래스.exe`.
 
 ## Credits
 Fonts: Noto Sans KR / Noto Sans CJK KR (SIL Open Font License, `fonts/OFL.txt`).
