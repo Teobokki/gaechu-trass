@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0",
-  "url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.1.0/EPISODIA-Setup-1.1.0.exe",
-  "installer_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.1.0/EPISODIA-Setup-1.1.0.exe",
-  "full_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.1.0/EPISODIA-1.1.0-Windows-x64.zip",
-  "portable_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.1.0/EPISODIA-1.1.0-Windows-x64.zip",
-  "release_url": "https://github.com/Teobokki/gaechu-trass/releases/tag/v1.1.0",
-  "sha256": "5b095f540f8b4968d2cec3d9fd514bbd0783d16f7e588a445a95056698ff1aed",
-  "size": 80900280,
-  "portable_sha256": "ecd6de1ba9ed2a5e9ad27f168ce0c2ba25181e65b94fe371fa270d23015cd8eb",
-  "portable_size": 105155752,
+  "version": "1.1.1",
+  "url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.1.1/EPISODIA-Setup-1.1.1.exe",
+  "installer_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.1.1/EPISODIA-Setup-1.1.1.exe",
+  "full_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.1.1/EPISODIA-1.1.1-Windows-x64.zip",
+  "portable_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.1.1/EPISODIA-1.1.1-Windows-x64.zip",
+  "release_url": "https://github.com/Teobokki/gaechu-trass/releases/tag/v1.1.1",
+  "sha256": "249989be342e5d0d477401459f44ff519803112a0f9065cf4901bd3a6686665d",
+  "size": 80902988,
+  "portable_sha256": "619d83ac57eeeccf68586d514b1414a028fce90fa51c63c4368b13826f8c6887",
+  "portable_size": 105155628,
   "published": "2026-11-10",
-  "notes": "EPISODIA 1.1.0 — 개추 트래스의 새 이름입니다. 새 로고와 아이콘. 저장된 에피소드는 자동으로 그대로 옮겨집니다."
+  "notes": "EPISODIA 1.1.1 — 상단 바에 SUPPORTS KOREAN TTS · JAPANESE TTS · ENGLISH TTS 표시 추가."
 }
