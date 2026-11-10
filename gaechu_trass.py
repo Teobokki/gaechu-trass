@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""개추 트래스 — Korean-first cinematic episode maker.
+"""EPISODIA — Korean-first cinematic episode maker.
 Episode home for saved works; maker board to compose pictures into a widescreen episode.
 ©2026 EX Inc./HYPERION DIGITAL ©2026"""
 from __future__ import annotations
@@ -8,8 +8,9 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import tkinter.font as tkfont
 
-APP = "개추 트래스"
-APP_VERSION = "1.0.4"
+APP = "EPISODIA"
+OLD_APP = "개추 트래스"  # pre-1.1.0 name; data folder migrates on first run
+APP_VERSION = "1.1.0"
 COPYRIGHT = "\u00a92026 EX Inc./HYPERION DIGITAL \u00a92026"
 REPO = "Teobokki/gaechu-trass"
 UPDATE_URL = "https://raw.githubusercontent.com/%s/main/latest.json" % REPO
@@ -17,7 +18,7 @@ CATALOG_ID = "gaechu-trass"
 
 BUNDLED_EPISODE = {
     "id": "bundled-episode-1",
-    "title": "개추 트래스",
+    "title": "EPISODIA",
     "subtitle": "에피소드 1",
     "created": "2026-11-06T00:00:00",
     "bundled": True,
@@ -78,12 +79,25 @@ def downloads_dir():
 
 
 def app_data_dir():
-    """Per-user app data: %LOCALAPPDATA%\\개추 트래스 on Windows."""
+    """Per-user app data: %LOCALAPPDATA%\\EPISODIA on Windows (migrated from 개추 트래스)."""
     if os.name == "nt":
         base = os.environ.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), "AppData", "Local")
     else:
         base = os.path.join(os.path.expanduser("~"), ".local", "share")
     d = os.path.join(base, APP)
+    old = os.path.join(base, OLD_APP)
+    if not os.path.isdir(d) and os.path.isdir(old):
+        try:  # carry saved episodes, posters and TTS cache over from the old name
+            shutil.copytree(old, d)
+            lp = os.path.join(d, "library.json")
+            if os.path.isfile(lp):
+                with open(lp, "r", encoding="utf-8") as f:
+                    raw = f.read()
+                a, b = json.dumps(old)[1:-1], json.dumps(d)[1:-1]
+                with open(lp, "w", encoding="utf-8") as f:
+                    f.write(raw.replace(a, b))
+        except Exception:
+            pass
     os.makedirs(d, exist_ok=True)
     os.makedirs(os.path.join(d, "posters"), exist_ok=True)
     return d
@@ -195,7 +209,7 @@ def vtuple(v):
 def check_update():
     try:
         req = urllib.request.Request(UPDATE_URL + "?t=%d" % time.time(),
-                                     headers={"User-Agent": "GAECHU-TRASS/" + APP_VERSION})
+                                     headers={"User-Agent": "EPISODIA/" + APP_VERSION})
         with urllib.request.urlopen(req, timeout=10) as r:
             m = json.loads(r.read(65536).decode("utf-8"))
         ver = str(m["version"])
@@ -844,7 +858,7 @@ class Studio(tk.Tk):
         nav = tk.Frame(top, bg=PANEL)
         nav.pack(side="left", padx=(28, 0), fill="y")
         self._nav = {}
-        for key, label in (("maker", "⌂  개추 트래스"), ("home", "에피소드")):
+        for key, label in (("maker", "⌂  EPISODIA"), ("home", "에피소드")):
             f = tk.Frame(nav, bg=PANEL)
             f.pack(side="left", padx=2, fill="y")
             l = tk.Label(f, text=label, bg=PANEL, fg=(TXT if key == "maker" else MUT), font=(FONT_UI, 10, "bold"),
@@ -1051,9 +1065,9 @@ class Studio(tk.Tk):
             except Exception:
                 pass
             tk.Label(empty, text=APP, bg=BG, fg=TXT, font=(FONT_UI, 18, "bold")).pack(pady=(16, 6))
-            tk.Label(empty, text="아직 에피소드가 없습니다.\n개추 트래스에서 만들어 보세요.",
+            tk.Label(empty, text="아직 에피소드가 없습니다.\nEPISODIA에서 만들어 보세요.",
                      bg=BG, fg=MUT, font=(FONT_UI, 12), justify="center").pack()
-            Btn(empty, "개추 트래스로 만들기", lambda: self.show_tab("maker"),
+            Btn(empty, "EPISODIA로 만들기", lambda: self.show_tab("maker"),
                 fill=RED, fg="white", hover=RED2).pack(pady=(22, 0))
             self.home_status.configure(text="")
             return
@@ -1874,7 +1888,7 @@ class Studio(tk.Tk):
 
 
 def _selftest_tts(out_dir):
-    """Diagnostic: `개추 트래스.exe --selftest-tts DIR` writes ko/ja/en narration + report."""
+    """Diagnostic: `EPISODIA.exe --selftest-tts DIR` writes ko/ja/en narration + report."""
     os.makedirs(out_dir, exist_ok=True)
     lines = []
     try:
@@ -1882,7 +1896,7 @@ def _selftest_tts(out_dir):
         lines.append("imports ok: edge_tts aiohttp certifi")
     except Exception as e:
         lines.append("import error: %r" % e)
-    for lang, text in (("ko", "안녕하세요, 개추 트래스입니다."), ("ja", "こんにちは、テストです。"), ("en", "Hello from the episode maker.")):
+    for lang, text in (("ko", "안녕하세요, EPISODIA입니다."), ("ja", "こんにちは、テストです。"), ("en", "Hello from the episode maker.")):
         try:
             wav, sec, eng = tts_wav(text)
             dst = os.path.join(out_dir, "tts_%s.wav" % lang)

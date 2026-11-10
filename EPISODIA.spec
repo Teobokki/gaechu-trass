@@ -11,6 +11,6 @@ a = Analysis(['gaechu_trass.py'],
              excludes=['matplotlib', 'scipy', 'pandas', 'IPython', 'pytest', 'torch', 'cv2'],
              noarchive=False)
 pyz = PYZ(a.pure)
-exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name='개추 트래스', console=False, upx=False,
+exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name='EPISODIA', console=False, upx=False,
           version='version.txt', icon=['assets/logo.ico'])
-coll = COLLECT(exe, a.binaries, a.datas, upx=False, name='개추 트래스')
+coll = COLLECT(exe, a.binaries, a.datas, upx=False, name='EPISODIA')
