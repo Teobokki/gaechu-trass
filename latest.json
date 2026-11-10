@@ -1,14 +1,14 @@
 {
-  "version": "1.0.4",
-  "url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.0.4/GAECHU-TRASS-Setup-1.0.4.exe",
-  "installer_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.0.4/GAECHU-TRASS-Setup-1.0.4.exe",
-  "full_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.0.4/GAECHU-TRASS-1.0.4-Windows-x64.zip",
-  "portable_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.0.4/GAECHU-TRASS-1.0.4-Windows-x64.zip",
-  "release_url": "https://github.com/Teobokki/gaechu-trass/releases/tag/v1.0.4",
-  "sha256": "8682bcdb1962031fb84aec63f9a3cf0df2be5fd3a61d7b36e8bcba70d455e58e",
-  "size": 81735159,
-  "portable_sha256": "71f7afc075c41d44634bc3c830b2d9ab56daa1134f0b58465463580292e052f3",
-  "portable_size": 106060088,
-  "published": "2026-11-06",
-  "notes": "개추 트래스 1.0.4 — 상단 탭 순서: ⌂ 개추 트래스(에피소드 메이커)가 왼쪽 첫 번째, 에피소드(시청)가 두 번째. 실행 시 메이커가 기본 화면. TTS SUBTITLES는 장면마다 선택 사항으로 그대로입니다."
+  "version": "1.1.0",
+  "url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.1.0/EPISODIA-Setup-1.1.0.exe",
+  "installer_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.1.0/EPISODIA-Setup-1.1.0.exe",
+  "full_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.1.0/EPISODIA-1.1.0-Windows-x64.zip",
+  "portable_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.1.0/EPISODIA-1.1.0-Windows-x64.zip",
+  "release_url": "https://github.com/Teobokki/gaechu-trass/releases/tag/v1.1.0",
+  "sha256": "5b095f540f8b4968d2cec3d9fd514bbd0783d16f7e588a445a95056698ff1aed",
+  "size": 80900280,
+  "portable_sha256": "ecd6de1ba9ed2a5e9ad27f168ce0c2ba25181e65b94fe371fa270d23015cd8eb",
+  "portable_size": 105155752,
+  "published": "2026-11-10",
+  "notes": "EPISODIA 1.1.0 — 개추 트래스의 새 이름입니다. 새 로고와 아이콘. 저장된 에피소드는 자동으로 그대로 옮겨집니다."
 }
