@@ -1,4 +1,4 @@
-#define MyVer "1.1.0"
+#define MyVer "1.1.1"
 [Setup]
 AppId={{09A0D0B7-E132-4385-B05F-6E708A3A15B7}
 AppName=EPISODIA

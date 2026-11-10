@@ -10,7 +10,7 @@ import tkinter.font as tkfont
 
 APP = "EPISODIA"
 OLD_APP = "개추 트래스"  # pre-1.1.0 name; data folder migrates on first run
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.1.1"
 COPYRIGHT = "\u00a92026 EX Inc./HYPERION DIGITAL \u00a92026"
 REPO = "Teobokki/gaechu-trass"
 UPDATE_URL = "https://raw.githubusercontent.com/%s/main/latest.json" % REPO
@@ -854,6 +854,10 @@ class Studio(tk.Tk):
         tk.Label(top, text="  v" + APP_VERSION, bg=PANEL, fg=MUT, font=(FONT_UI, 9)).pack(side="left", pady=(6, 0))
         Btn(top, "↺  업데이트 확인", self.check_updates, fill=PANEL, fg=MUT, hover=CARD2,
             font=(FONT_UI, 9, "bold")).pack(side="right", padx=12)
+        tts = tk.Frame(top, bg=CARD2, highlightbackground=BORDER, highlightthickness=1)
+        tts.pack(side="right", padx=(0, 4), pady=12)
+        tk.Label(tts, text="SUPPORTS KOREAN TTS  ·  JAPANESE TTS  ·  ENGLISH TTS", bg=CARD2, fg=TXT,
+                 font=(FONT_UI, 8, "bold"), padx=10, pady=3).pack()
 
         nav = tk.Frame(top, bg=PANEL)
         nav.pack(side="left", padx=(28, 0), fill="y")

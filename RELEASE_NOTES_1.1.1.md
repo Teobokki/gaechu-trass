@@ -1,0 +1,5 @@
+# EPISODIA 1.1.1
+
+- Top bar now shows a small box: SUPPORTS KOREAN TTS · JAPANESE TTS · ENGLISH TTS.
+
+©2026 EX Inc./HYPERION DIGITAL ©2026
