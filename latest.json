@@ -1,14 +1,14 @@
 {
-  "version": "1.1.2",
-  "url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.1.2/EPISODIA-Setup-1.1.2.exe",
-  "installer_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.1.2/EPISODIA-Setup-1.1.2.exe",
-  "portable_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.1.2/EPISODIA-1.1.2-Portable.exe",
-  "release_url": "https://github.com/Teobokki/gaechu-trass/releases/tag/v1.1.2",
-  "sha256": "7e2e01e7a7feb8f034600e376bd16c24f9b83dce7b4f272cc73b438c09233736",
-  "size": 81395507,
-  "portable_sha256": "1ff14cec506090f794a035eda43c4d593225ce525c7c42743cf64aa474cde2e7",
-  "portable_size": 105596762,
+  "version": "1.1.3",
+  "url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.1.3/EPISODIA-Setup-1.1.3.exe",
+  "installer_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.1.3/EPISODIA-Setup-1.1.3.exe",
+  "portable_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.1.3/EPISODIA-1.1.3-Portable.exe",
+  "release_url": "https://github.com/Teobokki/gaechu-trass/releases/tag/v1.1.3",
+  "sha256": "c0559a3f58e2ef1d8331caec410d9c65f259348dde13b9f562171c8e67f2c9fc",
+  "size": 160339358,
+  "portable_sha256": "209ab8e45b7cac0e1c1f9f8279ebb80d9d76e624b76775447cfd4d4d7dca608b",
+  "portable_size": 190221909,
   "published": "2026-11-12",
-  "notes": "EPISODIA 1.1.2 \u2014 Romanian TTS (ro-RO-EmilNeural) + diacritic captions; top bar badge adds \u00b7 ROMANIAN TTS; portable is a single exe (no zip).",
-  "full_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.1.2/EPISODIA-1.1.2-Portable.exe"
+  "notes": "EPISODIA 1.1.3 \u2014 Real Romanian voice fix: new \uc74c\uc131 \uc5b8\uc5b4 (TTS language) selector (Auto / Korean / Japanese / English / Rom\u00e2n\u0103 Emil male / Rom\u00e2n\u0103 Alina female) to force Romanian; plain-ASCII Romanian (no diacritics) is now auto-detected; bundled offline Piper ro_RO voice so Romanian keeps a real accent with no internet; Windows voices never read Romanian in English. Portable is a single exe (no zip).",
+  "full_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.1.3/EPISODIA-1.1.3-Portable.exe"
 }
