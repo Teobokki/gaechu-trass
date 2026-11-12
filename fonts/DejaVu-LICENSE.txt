@@ -1,0 +1,2 @@
+DejaVu Fonts — Bitstream Vera Copyright + Arev Fonts Copyright + Public Domain changes.
+See https://dejavu-fonts.github.io/ and /usr/share/doc/fonts-dejavu-core/copyright

@@ -10,7 +10,7 @@ import tkinter.font as tkfont
 
 APP = "EPISODIA"
 OLD_APP = "개추 트래스"  # pre-1.1.0 name; data folder migrates on first run
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.1.2"
 COPYRIGHT = "\u00a92026 EX Inc./HYPERION DIGITAL \u00a92026"
 REPO = "Teobokki/gaechu-trass"
 UPDATE_URL = "https://raw.githubusercontent.com/%s/main/latest.json" % REPO
@@ -33,7 +33,8 @@ LETTER = (0, 0, 0)
 BOARD_RGB = (24, 24, 29)
 FONT_UI = "Noto Sans KR"
 FONT_MIX = "Noto Sans CJK KR"
-FALLBACK_UI = ("Malgun Gothic", "Yu Gothic UI", "Segoe UI", "Arial")
+FALLBACK_UI = ("Malgun Gothic", "Yu Gothic UI", "Segoe UI", "DejaVu Sans", "Arial")
+FONT_CAP = "DejaVu Sans"  # caption entry: Romanian diacritics ă â î ș ț
 
 FPS = 24
 SCENE_SECS = 4.0
@@ -185,7 +186,8 @@ def register_fonts():
     if os.name == "nt":
         try:
             import ctypes
-            for fn in ("NotoSansKR-Regular.otf", "NotoSansKR-Bold.otf", "NotoSansCJKkr-Regular.otf"):
+            for fn in ("NotoSansKR-Regular.otf", "NotoSansKR-Bold.otf", "NotoSansCJKkr-Regular.otf",
+                       "DejaVuSans.ttf", "DejaVuSans-Bold.ttf"):
                 path = res_path("fonts", fn)
                 if os.path.isfile(path):
                     ctypes.windll.gdi32.AddFontResourceExW(path, 0x10, 0)
@@ -279,11 +281,16 @@ class Btn(tk.Label):
 _font_cache = {}
 
 
-def pil_font(size, bold=False, mixed=False):
-    key = (size, bold, mixed)
+def pil_font(size, bold=False, mixed=False, latin=False):
+    key = (size, bold, mixed, latin)
     if key in _font_cache:
         return _font_cache[key]
     candidates = []
+    if latin:
+        # DejaVu covers Romanian ă â î ș ț (Noto Sans KR is missing ș/ț)
+        if bold:
+            candidates.append(res_path("fonts", "DejaVuSans-Bold.ttf"))
+        candidates.append(res_path("fonts", "DejaVuSans.ttf"))
     if mixed:
         candidates.append(res_path("fonts", "NotoSansCJKkr-Regular.otf"))
     if bold:
@@ -291,6 +298,7 @@ def pil_font(size, bold=False, mixed=False):
     candidates += [
         res_path("fonts", "NotoSansKR-Regular.otf"),
         res_path("fonts", "NotoSansCJKkr-Regular.otf"),
+        res_path("fonts", "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"),
     ]
     font = None
     for p in candidates:
@@ -376,10 +384,13 @@ TTS_VOICES = {
     "ko": ("ko-KR-SunHiNeural", "ko-KR"),
     "ja": ("ja-JP-NanamiNeural", "ja-JP"),
     "en": ("en-US-AriaNeural", "en-US"),
+    "ro": ("ro-RO-EmilNeural", "ro-RO"),
 }
 _HANGUL = re.compile(r"[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]")
 _KANA = re.compile(r"[\u3040-\u30ff\u31f0-\u31ff\uff66-\uff9f]")
 _HAN = re.compile(r"[\u4e00-\u9fff\u3400-\u4dbf]")
+# Romanian diacritics (comma-below + cedilla forms) — Noto Sans KR lacks ș/ț
+_RO = re.compile(r"[ăâîșțĂÂÎȘȚşţŞŢ]")
 _tts_dur_cache = {}
 
 
@@ -388,11 +399,13 @@ def clean_caption(text):
 
 
 def detect_lang(text):
-    """Hangul -> ko, kana (or kanji-only) -> ja, else en."""
+    """Hangul -> ko, kana/kanji -> ja, Romanian diacritics -> ro, else en."""
     if _HANGUL.search(text):
         return "ko"
     if _KANA.search(text) or _HAN.search(text):
         return "ja"
+    if _RO.search(text):
+        return "ro"
     return "en"
 
 
@@ -560,16 +573,17 @@ def _wrap_caption(d, text, font, maxw):
 
 
 def draw_caption(frame, text):
-    """Burn a clean caption into the lower part of a 16:9 frame (KO/JA/EN via Noto Sans KR)."""
+    """Burn a clean caption into the lower part of a 16:9 frame (KO/JA/EN/RO)."""
     text = clean_caption(text)
     if not text:
         return frame
     fr = frame.convert("RGB").copy()
     W, H = fr.size
     size = max(14, int(H * 0.050))
-    # Bold KR face covers Hangul/Latin/kana; full CJK face for kanji/hanja so nothing renders as boxes.
+    # Bold KR face covers Hangul/Latin/kana; CJK face for kanji; DejaVu for Romanian ș/ț.
     cjk = bool(_HAN.search(text))
-    font = pil_font(size, bold=not cjk, mixed=cjk)
+    latin = bool(_RO.search(text)) and not cjk and not _HANGUL.search(text) and not _KANA.search(text)
+    font = pil_font(size, bold=not cjk, mixed=cjk, latin=latin)
     d = ImageDraw.Draw(fr)
     lines = _wrap_caption(d, text, font, W * 0.80)
     if len(lines) > 3:
@@ -792,9 +806,11 @@ class Studio(tk.Tk):
             pass
 
         fams = set(tkfont.families(self))
-        global FONT_UI, FONT_MIX
+        global FONT_UI, FONT_MIX, FONT_CAP
         FONT_UI = pick_family((FONT_UI,) + FALLBACK_UI, fams)
         FONT_MIX = pick_family((FONT_MIX, "Noto Sans KR", "Noto Sans CJK KR") + FALLBACK_UI, fams)
+        # Caption entry needs ș/ț: prefer system faces that have them, then bundled DejaVu
+        FONT_CAP = pick_family(("Malgun Gothic", "Segoe UI", "DejaVu Sans", FONT_MIX) + FALLBACK_UI, fams)
 
         self.scenes = []  # dicts: path, name, im (PIL), thumb (ImageTk)
         self.sel = None
@@ -856,7 +872,7 @@ class Studio(tk.Tk):
             font=(FONT_UI, 9, "bold")).pack(side="right", padx=12)
         tts = tk.Frame(top, bg=CARD2, highlightbackground=BORDER, highlightthickness=1)
         tts.pack(side="right", padx=(0, 4), pady=12)
-        tk.Label(tts, text="SUPPORTS KOREAN TTS  ·  JAPANESE TTS  ·  ENGLISH TTS", bg=CARD2, fg=TXT,
+        tk.Label(tts, text="SUPPORTS KOREAN TTS  ·  JAPANESE TTS  ·  ENGLISH TTS  ·  ROMANIAN TTS", bg=CARD2, fg=TXT,
                  font=(FONT_UI, 8, "bold"), padx=10, pady=3).pack()
 
         nav = tk.Frame(top, bg=PANEL)
@@ -1603,7 +1619,7 @@ class Studio(tk.Tk):
             ent_wrap = tk.Frame(right, bg=CARD)
             ent_wrap.pack(fill="x", pady=(2, 4))
             ent = tk.Entry(ent_wrap, textvariable=sc["cap_var"], bg=PANEL, fg=TXT, insertbackground=RED,
-                           relief="flat", font=(FONT_MIX, 9), width=26,
+                           relief="flat", font=(FONT_CAP, 9), width=26,
                            highlightthickness=1, highlightbackground=BORDER, highlightcolor=RED)
             ent.pack(fill="x", ipady=3)
             ph = tk.Label(ent_wrap, text="(선택) 입력하면 화면 자막 + 음성", bg=PANEL, fg=DIM,
@@ -1892,7 +1908,7 @@ class Studio(tk.Tk):
 
 
 def _selftest_tts(out_dir):
-    """Diagnostic: `EPISODIA.exe --selftest-tts DIR` writes ko/ja/en narration + report."""
+    """Diagnostic: `EPISODIA.exe --selftest-tts DIR` writes ko/ja/en/ro narration + report."""
     os.makedirs(out_dir, exist_ok=True)
     lines = []
     try:
@@ -1900,7 +1916,13 @@ def _selftest_tts(out_dir):
         lines.append("imports ok: edge_tts aiohttp certifi")
     except Exception as e:
         lines.append("import error: %r" % e)
-    for lang, text in (("ko", "안녕하세요, EPISODIA입니다."), ("ja", "こんにちは、テストです。"), ("en", "Hello from the episode maker.")):
+    samples = (
+        ("ko", "안녕하세요, EPISODIA입니다."),
+        ("ja", "こんにちは、テストです。"),
+        ("en", "Hello from the episode maker."),
+        ("ro", "Bună ziua, acesta este un test în limba română."),
+    )
+    for lang, text in samples:
         try:
             wav, sec, eng = tts_wav(text)
             dst = os.path.join(out_dir, "tts_%s.wav" % lang)
@@ -1911,6 +1933,8 @@ def _selftest_tts(out_dir):
     try:
         im = Image.new("RGB", (OUT_W, OUT_H), (60, 90, 120))
         draw_caption(im, "자막 テスト caption").save(os.path.join(out_dir, "caption_frame.png"))
+        draw_caption(Image.new("RGB", (OUT_W, OUT_H), (40, 70, 100)),
+                     "Bună ziua — ă â î ș ț").save(os.path.join(out_dir, "caption_ro.png"))
         lines.append("caption frame ok")
     except Exception as e:
         lines.append("caption frame FAIL %s" % e)
