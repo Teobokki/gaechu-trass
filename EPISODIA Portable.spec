@@ -6,7 +6,7 @@ for _m in ('edge_tts', 'certifi', 'aiohttp', 'yarl', 'multidict', 'frozenlist', 
     _d, _b, _h = collect_all(_m)
     d += _d; b += _b; h += _h
 a = Analysis(['gaechu_trass.py'],
-             datas=[('assets', 'assets'), ('fonts', 'fonts')] + d,
+             datas=[('assets', 'assets'), ('fonts', 'fonts'), ('piper_win', 'piper')] + d,
              binaries=b,
              hiddenimports=['PIL.ImageTk', 'windnd', 'winsound', 'wave', 'edge_tts', 'aiohttp', 'certifi', 'tabulate'] + h,
              excludes=['matplotlib', 'scipy', 'pandas', 'IPython', 'pytest', 'torch', 'cv2'],

@@ -10,7 +10,7 @@ import tkinter.font as tkfont
 
 APP = "EPISODIA"
 OLD_APP = "개추 트래스"  # pre-1.1.0 name; data folder migrates on first run
-APP_VERSION = "1.1.2"
+APP_VERSION = "1.1.3"
 COPYRIGHT = "\u00a92026 EX Inc./HYPERION DIGITAL \u00a92026"
 REPO = "Teobokki/gaechu-trass"
 UPDATE_URL = "https://raw.githubusercontent.com/%s/main/latest.json" % REPO
@@ -384,13 +384,61 @@ TTS_VOICES = {
     "ko": ("ko-KR-SunHiNeural", "ko-KR"),
     "ja": ("ja-JP-NanamiNeural", "ja-JP"),
     "en": ("en-US-AriaNeural", "en-US"),
-    "ro": ("ro-RO-EmilNeural", "ro-RO"),
+    "ro": ("ro-RO-EmilNeural", "ro-RO"),      # Romanian, male
+    "ro-f": ("ro-RO-AlinaNeural", "ro-RO"),   # Romanian, female
 }
+# Language selector (maker bar). "auto" = detect from the typed text.
+LANG_CHOICES = [
+    ("자동 (Auto)", "auto"),
+    ("한국어 (Korean)", "ko"),
+    ("日本語 (Japanese)", "ja"),
+    ("English", "en"),
+    ("Română — Emil (M)", "ro"),
+    ("Română — Alina (F)", "ro-f"),
+]
+LANG_LABEL_TO_CODE = {lbl: code for lbl, code in LANG_CHOICES}
+LANG_CODE_TO_LABEL = {code: lbl for lbl, code in LANG_CHOICES}
 _HANGUL = re.compile(r"[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]")
 _KANA = re.compile(r"[\u3040-\u30ff\u31f0-\u31ff\uff66-\uff9f]")
 _HAN = re.compile(r"[\u4e00-\u9fff\u3400-\u4dbf]")
 # Romanian diacritics (comma-below + cedilla forms) — Noto Sans KR lacks ș/ț
 _RO = re.compile(r"[ăâîșțĂÂÎȘȚşţŞŢ]")
+# Common Romanian words/stopwords so plain-ASCII Romanian (no diacritics) is still detected.
+_RO_WORDS = set((
+    "si este sunt este esti suntem sunteti era erau acesta aceasta acest aceste acel acea "
+    "acesti acestea limba romana romania roman romanca buna ziua seara dimineata noapte "
+    "nu da ba pentru foarte mult putin mai cel cea cei cele ca ce cine cum cand unde care "
+    "din intr intre fara prin dupa pana sub peste langa catre despre asupra "
+    "eu tu el ea noi voi ei ele mine tine lui ei nostru vostru meu tau sau "
+    "am ai are avem aveti au avea fi fost fie avut "
+    "cu la de pe un o unu una niste acum aici acolo asa bine rau "
+    "multumesc salut imi iti ii ne va le te se "
+    "oras tara apa foc pamant aer viata moarte dragoste prieten familie casa masina "
+    "astazi maine ieri saptamana luna anul timp ora zi noapte "
+    "vreau pot trebuie face spune merge veni avea sti crede gandi vorbi "
+    "frumos urat mare mic nou vechi bun prost cald rece "
+    "primul doilea treilea unu doi trei patru cinci sase sapte opt noua zece"
+).split())
+_WORD_RE = re.compile(r"[a-zA-Z]+")
+
+
+def _looks_romanian(text):
+    """Score plain-ASCII text against common Romanian words (used when there are no diacritics)."""
+    words = [w.lower() for w in _WORD_RE.findall(text)]
+    if len(words) < 2:
+        return False
+    hits = sum(1 for w in words if w in _RO_WORDS)
+    # need at least two Romanian cue words, or a solid fraction of short texts
+    return hits >= 2 or (hits >= 1 and hits / len(words) >= 0.34)
+
+
+def piper_paths():
+    """Bundled offline Piper (MIT) + Romanian voice ro_RO-mihai-medium (CC0)."""
+    exe = res_path("piper", "piper.exe" if os.name == "nt" else "piper")
+    model = res_path("assets", "voice", "ro_RO-mihai-medium.onnx")
+    return exe, model
+
+
 _tts_dur_cache = {}
 
 
@@ -399,12 +447,14 @@ def clean_caption(text):
 
 
 def detect_lang(text):
-    """Hangul -> ko, kana/kanji -> ja, Romanian diacritics -> ro, else en."""
+    """Hangul -> ko, kana/kanji -> ja, Romanian diacritics OR Romanian words -> ro, else en."""
     if _HANGUL.search(text):
         return "ko"
     if _KANA.search(text) or _HAN.search(text):
         return "ja"
     if _RO.search(text):
+        return "ro"
+    if _looks_romanian(text):
         return "ro"
     return "en"
 
@@ -438,6 +488,19 @@ def _tts_edge(text, voice, mp3):
         raise RuntimeError("edge-tts returned no audio")
 
 
+def _tts_piper(text, wav):
+    """TRUE-OFFLINE Romanian with a real Romanian accent: bundled Piper + ro_RO-mihai-medium (no internet)."""
+    exe, model = piper_paths()
+    if not os.path.isfile(exe) or not os.path.isfile(model):
+        raise RuntimeError("offline Romanian voice not bundled")
+    p = subprocess.run([exe, "-m", model, "-f", wav, "-q"],
+                       input=text.encode("utf-8"),
+                       stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                       cwd=os.path.dirname(exe), timeout=120, creationflags=NO_WINDOW)
+    if not os.path.isfile(wav) or os.path.getsize(wav) < 1000:
+        raise RuntimeError((p.stderr or b"").decode("utf-8", "replace")[-200:] or "piper failed")
+
+
 def _tts_sapi(text, culture, wav):
     """Offline Windows voices (e.g. Microsoft Heami on Korean Windows) via System.Speech."""
     if os.name != "nt":
@@ -451,7 +514,8 @@ def _tts_sapi(text, culture, wav):
         "$c='%s';"
         "$v=$s.GetInstalledVoices()|?{$_.Enabled -and $_.VoiceInfo.Culture.Name -eq $c}|select -First 1;"
         "if(-not $v){$v=$s.GetInstalledVoices()|?{$_.Enabled -and $_.VoiceInfo.Culture.Name.StartsWith($c.Substring(0,2))}|select -First 1};"
-        "if($v){$s.SelectVoice($v.VoiceInfo.Name)};"
+        "if(-not $v){[Console]::Error.WriteLine('no installed voice for culture '+$c); exit 3};"
+        "$s.SelectVoice($v.VoiceInfo.Name);"
         "$t=[IO.File]::ReadAllText('%s',[Text.Encoding]::UTF8);"
         "$s.SetOutputToWaveFile('%s');$s.Speak($t);$s.Dispose()"
     ) % (culture, txt.replace("'", "''"), wav.replace("'", "''"))
@@ -473,21 +537,34 @@ def wav_seconds(path):
         return w.getnframes() / float(w.getframerate() or 1)
 
 
-def tts_wav(text):
-    """Return (wav_path, seconds, engine) for text; cached per text+voice. Raises if all engines fail."""
+def resolve_lang(text, lang=None):
+    """Pick the TTS language code. lang None/'auto' -> auto-detect; otherwise honour the forced choice."""
+    if not lang or lang == "auto":
+        return detect_lang(text)
+    if lang not in TTS_VOICES:
+        return detect_lang(text)
+    return lang
+
+
+def tts_wav(text, lang=None):
+    """Return (wav_path, seconds, engine) for text; cached per text+voice. Raises if all engines fail.
+    lang: None/'auto' auto-detects; 'ko'/'ja'/'en'/'ro'/'ro-f' force that voice."""
     import hashlib
     text = clean_caption(text)
     if not text:
         return None, 0.0, ""
-    lang = detect_lang(text)
+    lang = resolve_lang(text, lang)
     voice, culture = TTS_VOICES[lang]
-    key = hashlib.sha1(("v1|%s|%s" % (voice, text)).encode("utf-8")).hexdigest()[:20]
+    is_ro = (culture == "ro-RO")
+    key = hashlib.sha1(("v2|%s|%s" % (voice, text)).encode("utf-8")).hexdigest()[:20]
     out = os.path.join(tts_cache_dir(), key + ".wav")
     if os.path.isfile(out) and os.path.getsize(out) > 200:
         sec = wav_seconds(out)
         _tts_dur_cache[text] = sec
         return out, sec, "cache"
     errs = []
+    engine = ""
+    # 1) edge-tts — real native accent (needs internet). Uses the chosen Romanian voice.
     tmp_mp3 = out + ".mp3"
     try:
         _tts_edge(text, voice, tmp_mp3)
@@ -495,12 +572,26 @@ def tts_wav(text):
         engine = "edge:" + voice
     except Exception as e:
         errs.append("online voice: %s" % e)
-        engine = ""
     finally:
         try:
             os.remove(tmp_mp3)
         except Exception:
             pass
+    # 2) Romanian offline — bundled Piper with a REAL Romanian accent (never an English voice).
+    if not engine and is_ro:
+        raw = out + ".piper.wav"
+        try:
+            _tts_piper(text, raw)
+            _to_wav(raw, out)
+            engine = "piper:ro_RO-mihai-medium"
+        except Exception as e:
+            errs.append("offline Romanian (Piper): %s" % e)
+        finally:
+            try:
+                os.remove(raw)
+            except Exception:
+                pass
+    # 3) Windows SAPI — only a voice that matches the language (refuses wrong-language voices).
     if not engine:
         raw = out + ".sapi.wav"
         try:
@@ -515,6 +606,9 @@ def tts_wav(text):
             except Exception:
                 pass
     if not engine:
+        if is_ro:
+            raise RuntimeError("Romanian voice unavailable — it needs internet, or the bundled offline voice. (%s)"
+                               % "; ".join(errs))
         raise RuntimeError("; ".join(errs))
     sec = wav_seconds(out)
     _tts_dur_cache[text] = sec
@@ -700,9 +794,9 @@ class EpisodeComposer:
         return make_end_card(self.title)
 
 
-def prepare_narration(captions, status=None):
+def prepare_narration(captions, status=None, lang=None):
     """Make TTS for each non-empty caption. Returns (wavs, durations, warnings).
-    Empty captions -> no audio, normal scene length."""
+    Empty captions -> no audio, normal scene length. lang forces the voice language (None/'auto' = detect)."""
     wavs, durs, warns = [], [], []
     for i, cap in enumerate(captions):
         cap = clean_caption(cap)
@@ -713,7 +807,7 @@ def prepare_narration(captions, status=None):
         if status:
             status(i, len(captions))
         try:
-            wav, sec, _eng = tts_wav(cap)
+            wav, sec, _eng = tts_wav(cap, lang)
         except Exception as e:
             wavs.append(None)
             durs.append(SCENE_SECS)
@@ -724,11 +818,11 @@ def prepare_narration(captions, status=None):
     return wavs, durs, warns
 
 
-def export_episode(scenes, title, out_path, progress=None, captions=None, tts_status=None):
+def export_episode(scenes, title, out_path, progress=None, captions=None, tts_status=None, lang=None):
     """Render the episode. Optional per-scene captions are burned in and narrated.
     Returns list of warnings (empty when everything worked)."""
     captions = [clean_caption(c) for c in (captions or [])] + [""] * max(0, len(scenes) - len(captions or []))
-    wavs, durs, warns = prepare_narration(captions, tts_status) if any(captions) else ([None] * len(scenes), [SCENE_SECS] * len(scenes), [])
+    wavs, durs, warns = prepare_narration(captions, tts_status, lang) if any(captions) else ([None] * len(scenes), [SCENE_SECS] * len(scenes), [])
     comp = EpisodeComposer(scenes, title, captions=captions, durations=durs)
     total = comp.total_seconds()
     nframes = max(1, int(total * FPS))
@@ -822,6 +916,8 @@ class Studio(tk.Tk):
         self.strip_photos = []
         self._drag = None
         self.ep_title = tk.StringVar(value="에피소드 1")
+        # TTS language: 자동(Auto) detects from the text; or force Korean/Japanese/English/Romanian.
+        self.ep_lang = tk.StringVar(value=LANG_CODE_TO_LABEL["auto"])
         self.tab = "maker"  # home | maker — default maker board
         self.library = load_library()
         self._home_photos = []
@@ -949,6 +1045,17 @@ class Studio(tk.Tk):
                                     relief="flat", font=(FONT_MIX, 11), width=28,
                                     highlightthickness=1, highlightbackground=BORDER, highlightcolor=RED)
         self.title_entry.pack(side="left", ipady=5)
+
+        tk.Label(bar, text="음성 언어", bg=BG, fg=MUT, font=(FONT_UI, 9, "bold")).pack(side="left", padx=(18, 6))
+        lang_wrap = tk.Frame(bar, bg=CARD, highlightthickness=1, highlightbackground=BORDER)
+        lang_wrap.pack(side="left")
+        self.lang_menu = tk.OptionMenu(lang_wrap, self.ep_lang, *[lbl for lbl, _ in LANG_CHOICES])
+        self.lang_menu.configure(bg=CARD, fg=TXT, activebackground=CARD2, activeforeground=TXT,
+                                 relief="flat", font=(FONT_MIX, 9, "bold"), highlightthickness=0,
+                                 bd=0, anchor="w", width=16, cursor="hand2")
+        self.lang_menu["menu"].configure(bg=CARD, fg=TXT, activebackground=RED, activeforeground="white",
+                                         font=(FONT_MIX, 9))
+        self.lang_menu.pack(side="left", ipady=2)
 
         self.b_export = Btn(bar, "⬇  내보내기", self.export, fill=CARD2)
         self.b_export.pack(side="right")
@@ -1680,6 +1787,10 @@ class Studio(tk.Tk):
     def _captions(self):
         return [clean_caption(sc.get("caption", "")) for sc in self.scenes]
 
+    def _lang_code(self):
+        """Current TTS language selection as a code ('auto'/'ko'/'ja'/'en'/'ro'/'ro-f')."""
+        return LANG_LABEL_TO_CODE.get(self.ep_lang.get(), "auto")
+
     def preview_tts(self, sc):
         """미리 듣기: speak this scene's TTS SUBTITLES (optional)."""
         text = clean_caption(sc["cap_var"].get())
@@ -1689,10 +1800,11 @@ class Studio(tk.Tk):
         if sc in self.scenes:
             self._select(self.scenes.index(sc))
         self.set_status("음성 만드는 중…", TXT)
+        lang = self._lang_code()
 
         def work():
             try:
-                wav, sec, eng = tts_wav(text)
+                wav, sec, eng = tts_wav(text, lang)
             except Exception as e:
                 self.after(0, lambda: self.set_status("미리 듣기 실패: %s" % str(e)[:200], RED2))
                 return
@@ -1821,6 +1933,7 @@ class Studio(tk.Tk):
         out = os.path.join(downloads_dir(), "%s %s %s.mp4" % (APP, safe, time.strftime("%Y-%m-%d %H-%M-%S")))
         imgs = [s["im"] for s in self.scenes]
         caps = self._captions()
+        lang = self._lang_code()
         self._busy(True)
         self.prog.pack(side="right", padx=(8, 0))
         self.prog["value"] = 0
@@ -1835,7 +1948,7 @@ class Studio(tk.Tk):
 
         def work():
             try:
-                warns = export_episode(imgs, title, out, progress=prog, captions=caps, tts_status=tts_stat)
+                warns = export_episode(imgs, title, out, progress=prog, captions=caps, tts_status=tts_stat, lang=lang)
             except Exception as e:
                 self.after(0, lambda: self._export_done(None, str(e)))
             else:
@@ -1916,20 +2029,39 @@ def _selftest_tts(out_dir):
         lines.append("imports ok: edge_tts aiohttp certifi")
     except Exception as e:
         lines.append("import error: %r" % e)
+    # (tag, forced-lang-or-None, text)
     samples = (
-        ("ko", "안녕하세요, EPISODIA입니다."),
-        ("ja", "こんにちは、テストです。"),
-        ("en", "Hello from the episode maker."),
-        ("ro", "Bună ziua, acesta este un test în limba română."),
+        ("ko", None, "안녕하세요, EPISODIA입니다."),
+        ("ja", None, "こんにちは、テストです。"),
+        ("en", None, "Hello from the episode maker."),
+        ("ro_diacritics", None, "Bună ziua, acesta este un test în limba română."),
+        ("ro_ascii_auto", None, "Buna ziua, acesta este un test in limba romana."),
+        ("ro_ascii_forced", "ro", "Buna ziua, acesta este un test in limba romana."),
+        ("ro_female_forced", "ro-f", "Buna ziua, acesta este un test in limba romana."),
     )
-    for lang, text in samples:
+    for tag, forced, text in samples:
         try:
-            wav, sec, eng = tts_wav(text)
-            dst = os.path.join(out_dir, "tts_%s.wav" % lang)
+            wav, sec, eng = tts_wav(text, forced)
+            dst = os.path.join(out_dir, "tts_%s.wav" % tag)
             shutil.copyfile(wav, dst)
-            lines.append("%s ok %.2fs %s (%s)" % (lang, sec, eng, detect_lang(text)))
+            lines.append("%s ok %.2fs engine=%s forced=%s detect=%s resolved=%s"
+                         % (tag, sec, eng, forced, detect_lang(text), resolve_lang(text, forced)))
         except Exception as e:
-            lines.append("%s FAIL %s" % (lang, e))
+            lines.append("%s FAIL %s" % (tag, e))
+    # Offline Romanian path (bundled Piper) — verified directly so it is proven even when online works.
+    try:
+        exe, model = piper_paths()
+        raw = os.path.join(out_dir, "_piper_raw.wav")
+        _tts_piper("Buna ziua, acesta este un test in limba romana.", raw)
+        dst = os.path.join(out_dir, "tts_ro_offline_piper.wav")
+        _to_wav(raw, dst)
+        lines.append("ro_offline ok engine=piper:ro_RO-mihai-medium %.2fs exe=%s model_exists=%s"
+                     % (wav_seconds(dst), os.path.basename(exe), os.path.isfile(model)))
+    except Exception as e:
+        lines.append("ro_offline FAIL %s" % e)
+    lines.append("looks_romanian(ascii)=%s detect(ascii)=%s"
+                 % (_looks_romanian("Buna ziua, acesta este un test in limba romana."),
+                    detect_lang("Buna ziua, acesta este un test in limba romana.")))
     try:
         im = Image.new("RGB", (OUT_W, OUT_H), (60, 90, 120))
         draw_caption(im, "자막 テスト caption").save(os.path.join(out_dir, "caption_frame.png"))

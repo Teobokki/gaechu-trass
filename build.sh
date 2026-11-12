@@ -3,7 +3,7 @@
 set -e
 export PATH=/workspace/wine-portable/current/bin:$PATH WINEPREFIX=/workspace/exwifi/.wine WINEDEBUG=-all
 cd /workspace/gaechu-trass
-V=1.1.2
+V=1.1.3
 rm -rf build "dist/EPISODIA" dist/EPISODIA-PORTABLE.exe
 wine 'C:\Python311\python.exe' -m PyInstaller --noconfirm "EPISODIA.spec" > pyi.log 2>&1; echo PYI_DONE
 wine 'C:\InnoSetup\ISCC.exe' installer.iss > iss.log 2>&1; echo ISS_DONE
