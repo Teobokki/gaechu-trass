@@ -1,14 +1,14 @@
 {
-  "version": "1.1.1",
-  "url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.1.1/EPISODIA-Setup-1.1.1.exe",
-  "installer_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.1.1/EPISODIA-Setup-1.1.1.exe",
-  "full_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.1.1/EPISODIA-1.1.1-Windows-x64.zip",
-  "portable_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.1.1/EPISODIA-1.1.1-Windows-x64.zip",
-  "release_url": "https://github.com/Teobokki/gaechu-trass/releases/tag/v1.1.1",
-  "sha256": "249989be342e5d0d477401459f44ff519803112a0f9065cf4901bd3a6686665d",
-  "size": 80902988,
-  "portable_sha256": "619d83ac57eeeccf68586d514b1414a028fce90fa51c63c4368b13826f8c6887",
-  "portable_size": 105155628,
-  "published": "2026-11-10",
-  "notes": "EPISODIA 1.1.1 — 상단 바에 SUPPORTS KOREAN TTS · JAPANESE TTS · ENGLISH TTS 표시 추가."
+  "version": "1.1.2",
+  "url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.1.2/EPISODIA-Setup-1.1.2.exe",
+  "installer_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.1.2/EPISODIA-Setup-1.1.2.exe",
+  "portable_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.1.2/EPISODIA-1.1.2-Portable.exe",
+  "release_url": "https://github.com/Teobokki/gaechu-trass/releases/tag/v1.1.2",
+  "sha256": "7e2e01e7a7feb8f034600e376bd16c24f9b83dce7b4f272cc73b438c09233736",
+  "size": 81395507,
+  "portable_sha256": "1ff14cec506090f794a035eda43c4d593225ce525c7c42743cf64aa474cde2e7",
+  "portable_size": 105596762,
+  "published": "2026-11-12",
+  "notes": "EPISODIA 1.1.2 \u2014 Romanian TTS (ro-RO-EmilNeural) + diacritic captions; top bar badge adds \u00b7 ROMANIAN TTS; portable is a single exe (no zip).",
+  "full_url": "https://github.com/Teobokki/gaechu-trass/releases/download/v1.1.2/EPISODIA-1.1.2-Portable.exe"
 }
